@@ -33,19 +33,34 @@ npx prisma migrate deploy   # ou `npx prisma migrate dev` en développement
 npm run dev
 ```
 
-Ouvrir [http://localhost:3000](http://localhost:3000).
+Ouvrir [http://localhost:3000](http://localhost:3000) — la page d'accueil est
+un hub avec les 9 modules du dossier de cadrage sous forme de carrousel
+glissable (souris, trackpad ou tactile) ; seul **Dossier client** est
+fonctionnel, les 8 autres ouvrent une page d'aperçu (objectif + périmètre)
+en attendant leur lot de réalisation.
+
+## Déploiement d'une démo
+
+Un blueprint [`render.yaml`](render.yaml) est prêt pour déployer une version
+démo (app + base PostgreSQL managée) en quelques clics — voir
+[`docs/deploiement-render.md`](docs/deploiement-render.md). Pour de vraies
+données de client, voir d'abord `docs/conformite-hds.md`.
 
 ## Structure
 
 ```
-prisma/schema.prisma        Modèle de données (Lot 0 + Lot 1)
-src/lib/prisma.ts           Client Prisma partagé
-src/lib/evenements.ts       Journal d'audit (Événement)
-src/lib/completude.ts       Calcul de complétude du dossier
-src/app/dossiers/           UI module Dossier client
-src/app/api/dossiers/       API du module Dossier client
-docs/dossier-cadrage.md     Dossier de cadrage complet (spécification)
-docs/conformite-hds.md      Notes de conformité données de santé (à lire avant la prod)
+prisma/schema.prisma           Modèle de données (Lot 0 + Lot 1)
+src/lib/prisma.ts              Client Prisma partagé
+src/lib/evenements.ts          Journal d'audit (Événement)
+src/lib/completude.ts          Calcul de complétude du dossier
+src/lib/modules.ts             Métadonnées des 9 modules (hub d'accueil)
+src/components/Carrousel.tsx   Carrousel glissable réutilisable
+src/app/                       Hub d'accueil + pages d'aperçu des modules
+src/app/dossiers/              UI module Dossier client
+src/app/api/dossiers/          API du module Dossier client
+docs/dossier-cadrage.md        Dossier de cadrage complet (spécification)
+docs/conformite-hds.md         Notes de conformité données de santé (à lire avant la prod)
+docs/deploiement-render.md     Déployer une démo sur Render
 ```
 
 ## Module Dossier client (Lot 1)
@@ -54,7 +69,8 @@ Implémente la Carte 1 du plan : état civil, coordonnées, rattachement
 foyer/assuré, complétude des pièces, consentements RGPD horodatés, et
 synthèse de besoin (mini-audit vocal) qui n'est jamais actée sans validation
 humaine explicite. Chaque écriture significative est journalisée dans
-l'entité `Evenement` (jamais de modification silencieuse).
+l'entité `Evenement` (jamais de modification silencieuse). Les cartes de la
+fiche dossier se parcourent en carrousel glissable.
 
 Les autres modules du dossier de cadrage lisent ce module en lecture seule —
 aucune information saisie ici ne doit être ressaisie ailleurs.

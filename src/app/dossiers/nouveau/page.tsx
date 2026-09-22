@@ -47,14 +47,19 @@ export default function NouveauDossierPage() {
       <Link href="/dossiers" className="text-sm text-neutral-500 hover:underline">
         ← Retour aux dossiers
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold text-neutral-900">Nouveau dossier</h1>
+      <div className="mt-3 flex items-center gap-3">
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-fuchsia-500 text-2xl shadow-md">
+          🧾
+        </span>
+        <h1 className="text-2xl font-extrabold text-neutral-900">Nouveau dossier</h1>
+      </div>
       <p className="mt-1 text-sm text-neutral-600">
         Strict minimum pour démarrer au comptoir : identité + un moyen de contact.
         Le reste (pièces, consentements, synthèse besoin) se complète ensuite sur
         la fiche du dossier.
       </p>
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-4 rounded-xl border border-neutral-200 bg-white p-6">
+      <form onSubmit={onSubmit} className="mt-8 space-y-4 rounded-[28px] border border-neutral-200 bg-white p-6 shadow-lg">
         <div className="grid grid-cols-[100px_1fr_1fr] gap-3">
           <label className="text-sm">
             Civilité
@@ -105,7 +110,7 @@ export default function NouveauDossierPage() {
         <button
           type="submit"
           disabled={envoi}
-          className="w-full rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
+          className="w-full rounded-full bg-gradient-to-r from-orange-500 to-fuchsia-500 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:scale-[1.02] hover:shadow-xl disabled:opacity-50"
         >
           {envoi ? "Création…" : "Créer le dossier"}
         </button>

@@ -25,24 +25,35 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
   const completude = calculerCompletude(personne.documents);
   const nbPerimees = ordonnancesPerimees(personne.ordonnances);
 
-  return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-      <Link href="/dossiers" className="text-sm text-neutral-500 hover:underline">
-        ← Retour aux dossiers
-      </Link>
+  const initiales = `${personne.prenom[0] ?? ""}${personne.nom[0] ?? ""}`.toUpperCase();
 
-      <h1 className="mt-2 text-2xl font-semibold text-neutral-900">
-        {personne.civilite ? `${personne.civilite} ` : ""}
-        {personne.prenom} {personne.nom}
-      </h1>
-      <p className="text-sm text-neutral-500">
-        Dossier créé le {new Date(personne.creeA).toLocaleDateString("fr-FR")}
-        {nbPerimees > 0 && (
-          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-            {nbPerimees} ordonnance(s) périmée(s)
+  return (
+    <main className="flex-1 py-12">
+      <div className="mx-auto w-full max-w-3xl px-6">
+        <Link href="/dossiers" className="text-sm text-neutral-500 hover:underline">
+          ← Retour aux dossiers
+        </Link>
+
+        <div className="mt-3 flex items-center gap-4">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-fuchsia-500 text-lg font-bold text-white shadow-md">
+            {initiales}
           </span>
-        )}
-      </p>
+          <div>
+            <h1 className="text-2xl font-extrabold text-neutral-900">
+              {personne.civilite ? `${personne.civilite} ` : ""}
+              {personne.prenom} {personne.nom}
+            </h1>
+            <p className="text-sm text-neutral-500">
+              Dossier créé le {new Date(personne.creeA).toLocaleDateString("fr-FR")}
+              {nbPerimees > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  {nbPerimees} ordonnance(s) périmée(s)
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+      </div>
 
       <DossierDetailClient personne={personne} completude={completude} />
     </main>

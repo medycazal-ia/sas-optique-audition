@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Document, Evenement, Ordonnance, Personne } from "@prisma/client";
 import type { PieceRequise } from "@/lib/completude";
+import Carrousel from "@/components/Carrousel";
 
 type PersonneAvecRelations = Personne & {
   documents: Document[];
@@ -19,22 +20,41 @@ export default function DossierDetailClient({
   completude: PieceRequise[];
 }) {
   return (
-    <div className="mt-8 space-y-6">
-      <InformationsPersonnelles personne={personne} />
-      <Completude dossierId={personne.id} completude={completude} />
-      <ConsentementsRgpd personne={personne} />
-      <SyntheseBesoin personne={personne} />
-      <JournalEvenements evenements={personne.evenements} />
+    <div className="mt-8">
+      <Carrousel>
+        <InformationsPersonnelles personne={personne} />
+        <Completude dossierId={personne.id} completude={completude} />
+        <ConsentementsRgpd personne={personne} />
+        <SyntheseBesoin personne={personne} />
+        <JournalEvenements evenements={personne.evenements} />
+      </Carrousel>
     </div>
   );
 }
 
-function Carte({ titre, sousTitre, children }: { titre: string; sousTitre?: string; children: React.ReactNode }) {
+function Carte({
+  titre,
+  sousTitre,
+  emoji,
+  degrade,
+  children,
+}: {
+  titre: string;
+  sousTitre?: string;
+  emoji: string;
+  degrade: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-6">
-      <h2 className="text-lg font-semibold text-neutral-900">{titre}</h2>
-      {sousTitre && <p className="mt-1 text-sm text-neutral-500">{sousTitre}</p>}
-      <div className="mt-4">{children}</div>
+    <section className="anim-pop flex h-[520px] w-[85vw] max-w-[420px] flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-lg">
+      <div className={`flex items-center gap-3 bg-gradient-to-r ${degrade} px-6 py-5 text-white`}>
+        <span className="text-3xl drop-shadow-sm">{emoji}</span>
+        <div>
+          <h2 className="text-lg font-bold leading-tight">{titre}</h2>
+          {sousTitre && <p className="text-xs text-white/85">{sousTitre}</p>}
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6">{children}</div>
     </section>
   );
 }
@@ -69,7 +89,12 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
   }
 
   return (
-    <Carte titre="Coordonnées" sousTitre="Lues par les modules Devis, Mutuelle et Facturation — jamais ressaisies ailleurs.">
+    <Carte
+      titre="Coordonnées"
+      sousTitre="Lues par les modules Devis, Mutuelle et Facturation — jamais ressaisies ailleurs."
+      emoji="📇"
+      degrade="from-orange-400 to-amber-500"
+    >
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">
           Téléphone
@@ -142,7 +167,12 @@ function Completude({ dossierId, completude }: { dossierId: string; completude: 
   }
 
   return (
-    <Carte titre="Complétude du dossier" sousTitre="Pièce suivante à fournir, plutôt qu'un formulaire libre.">
+    <Carte
+      titre="Complétude du dossier"
+      sousTitre="Pièce suivante à fournir, plutôt qu'un formulaire libre."
+      emoji="📎"
+      degrade="from-emerald-400 to-teal-500"
+    >
       <ul className="divide-y divide-neutral-100">
         {completude.map((piece) => (
           <li key={piece.type} className="flex items-center justify-between py-2">
@@ -181,7 +211,12 @@ function ConsentementsRgpd({ personne }: { personne: Personne }) {
   }
 
   return (
-    <Carte titre="Consentements RGPD" sousTitre="Modifiables à tout moment par le client, horodatés à chaque changement.">
+    <Carte
+      titre="Consentements RGPD"
+      sousTitre="Modifiables à tout moment par le client, horodatés à chaque changement."
+      emoji="🔐"
+      degrade="from-sky-400 to-indigo-500"
+    >
       <div className="space-y-3">
         <ConsentementLigne
           libelle="Email"
@@ -286,6 +321,8 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
     <Carte
       titre="Synthèse besoin (mini-audit vocal)"
       sousTitre="Généré par IA, éditable, jamais enregistré définitivement sans validation humaine explicite."
+      emoji="🎙️"
+      degrade="from-fuchsia-400 to-purple-500"
     >
       <textarea
         value={texte}
@@ -336,7 +373,12 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
 
 function JournalEvenements({ evenements }: { evenements: Evenement[] }) {
   return (
-    <Carte titre="Journal d'événements" sousTitre="Qui a fait quoi, quand — jamais de modification silencieuse.">
+    <Carte
+      titre="Journal d'événements"
+      sousTitre="Qui a fait quoi, quand — jamais de modification silencieuse."
+      emoji="🕰️"
+      degrade="from-neutral-600 to-neutral-800"
+    >
       {evenements.length === 0 ? (
         <p className="text-sm text-neutral-500">Aucun événement enregistré.</p>
       ) : (
