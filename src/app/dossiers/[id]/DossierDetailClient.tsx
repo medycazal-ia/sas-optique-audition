@@ -15,11 +15,14 @@ import type {
   Ordonnance,
   Paiement,
   Personne,
+  Produit,
   Proposition,
   PropositionLigne,
+  SAV,
 } from "@prisma/client";
 import type { PieceRequise } from "@/lib/completude";
 import { formaterPrix, parserPrixEnCentimes } from "@/lib/argent";
+import { garantieExpiree } from "@/lib/sav";
 import Carrousel from "@/components/Carrousel";
 
 type PersonneAvecRelations = Personne & {
@@ -30,9 +33,15 @@ type PersonneAvecRelations = Personne & {
 
 type FactureAvecTout = Facture & { paiements: Paiement[]; avoirs: Avoir[] };
 
-type LivraisonAvecFacture = Livraison & { facture: FactureAvecTout | null };
+type CommandeAvecLignesSimples = Commande & { lignes: CommandeLigne[] };
 
-type CommandeAvecTout = Commande & { lignes: CommandeLigne[]; livraison: LivraisonAvecFacture | null };
+type SAVAvecCommande = SAV & { commandeRemplacement: CommandeAvecLignesSimples | null };
+
+type LivraisonAvecTout = Livraison & { facture: FactureAvecTout | null; savs: SAVAvecCommande[] };
+
+type CommandeLigneAvecProduit = CommandeLigne & { produit: Produit };
+
+type CommandeAvecTout = Commande & { lignes: CommandeLigneAvecProduit[]; livraison: LivraisonAvecTout | null };
 
 type PropositionAvecLignes = Proposition & {
   lignes: PropositionLigne[];
@@ -58,6 +67,7 @@ export default function DossierDetailClient({
         <MutuelleEtTiersPayant personne={personne} propositions={propositions} />
         <CommandeEtLivraison propositions={propositions} />
         <FacturationEtFinancement propositions={propositions} />
+        <SAVCarte propositions={propositions} />
         <ConsentementsRgpd personne={personne} />
         <SyntheseBesoin personne={personne} />
         <JournalEvenements evenements={personne.evenements} />
@@ -1010,7 +1020,7 @@ function FacturationEtFinancement({ propositions }: { propositions: PropositionA
   const livraisonsClotureesFacturables = propositions.flatMap((p) =>
     p.commandes
       .filter((c) => c.livraison && c.livraison.statut === "CLOTUREE")
-      .map((c) => ({ livraison: c.livraison as LivraisonAvecFacture, proposition: p })),
+      .map((c) => ({ livraison: c.livraison as LivraisonAvecTout, proposition: p })),
   );
 
   return (
@@ -1043,7 +1053,7 @@ function LivraisonFacture({
   proposition,
   onFait,
 }: {
-  livraison: LivraisonAvecFacture;
+  livraison: LivraisonAvecTout;
   proposition: PropositionAvecLignes;
   onFait: () => void;
 }) {
@@ -1218,6 +1228,279 @@ function FactureDetail({ facture, onFait }: { facture: FactureAvecTout; onFait: 
         </div>
       )}
     </div>
+  );
+}
+
+const LIBELLE_STATUT_SAV: Record<string, string> = {
+  OUVERT: "Ouvert",
+  DIAGNOSTIQUE: "Diagnostiqué",
+  EN_TRAITEMENT: "En traitement",
+  CLOTURE: "Clôturé",
+};
+
+const LIBELLE_DECISION_SAV: Record<string, string> = {
+  REPARATION: "Réparation",
+  ECHANGE: "Échange",
+  REMBOURSEMENT: "Remboursement",
+};
+
+function SAVCarte({ propositions }: { propositions: PropositionAvecLignes[] }) {
+  const router = useRouter();
+  const livraisonsAvecCommande = propositions.flatMap((p) =>
+    p.commandes
+      .filter((c) => c.livraison && c.livraison.statut === "CLOTUREE")
+      .map((c) => ({ commande: c, livraison: c.livraison as LivraisonAvecTout })),
+  );
+
+  return (
+    <Carte
+      titre="SAV"
+      sousTitre="Un incident après livraison, rattaché au dossier — jamais un nouveau dossier déconnecté."
+      emoji="🛠️"
+      degrade="from-slate-500 to-neutral-700"
+    >
+      {livraisonsAvecCommande.length === 0 ? (
+        <p className="text-sm text-neutral-500">Aucune livraison clôturée pour l&apos;instant.</p>
+      ) : (
+        <ul className="space-y-4">
+          {livraisonsAvecCommande.map(({ commande, livraison }) => (
+            <LivraisonSAV key={livraison.id} commande={commande} livraison={livraison} onFait={() => router.refresh()} />
+          ))}
+        </ul>
+      )}
+    </Carte>
+  );
+}
+
+function LivraisonSAV({
+  commande,
+  livraison,
+  onFait,
+}: {
+  commande: CommandeAvecTout;
+  livraison: LivraisonAvecTout;
+  onFait: () => void;
+}) {
+  const [ouverture, setOuverture] = useState(false);
+  const [motif, setMotif] = useState("");
+  const [ligneId, setLigneId] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+
+  const ligneChoisie = commande.lignes.find((l) => l.id === ligneId) ?? null;
+  const garantie = ligneChoisie ? garantieExpiree(ligneChoisie.produit.garantieMois, livraison.remiseA) : null;
+
+  async function ouvrir() {
+    if (!motif.trim()) return;
+    setEnvoi(true);
+    await fetch(`/api/livraisons/${livraison.id}/sav`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ motif, commandeLigneId: ligneId || undefined }),
+    });
+    setEnvoi(false);
+    setMotif("");
+    setLigneId("");
+    setOuverture(false);
+    onFait();
+  }
+
+  return (
+    <li className="rounded-lg border border-neutral-200 p-3">
+      <span className="text-sm text-neutral-700">
+        Livraison du {new Date(livraison.clotureeA ?? livraison.creeA).toLocaleDateString("fr-FR")}
+      </span>
+
+      {livraison.savs.length > 0 && (
+        <ul className="mt-2 space-y-2">
+          {livraison.savs.map((sav) => (
+            <SAVItem key={sav.id} sav={sav} onFait={onFait} />
+          ))}
+        </ul>
+      )}
+
+      {!ouverture ? (
+        <button onClick={() => setOuverture(true)} className="mt-2 block text-xs font-medium text-neutral-700 hover:underline">
+          + Ouvrir un SAV
+        </button>
+      ) : (
+        <div className="mt-2 space-y-2 rounded-md border border-neutral-100 bg-neutral-50 p-2">
+          <textarea
+            value={motif}
+            onChange={(e) => setMotif(e.target.value)}
+            rows={2}
+            placeholder="Description de l'incident (casse, gêne, panne, retour…)"
+            className="w-full rounded-md border border-neutral-300 px-2 py-1 text-xs"
+          />
+          <select
+            value={ligneId}
+            onChange={(e) => setLigneId(e.target.value)}
+            className="w-full rounded-md border border-neutral-300 px-2 py-1 text-xs"
+          >
+            <option value="">Toute la livraison</option>
+            {commande.lignes.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.libelleProduit}
+                {l.numeroSerie ? ` (SN ${l.numeroSerie})` : ""}
+              </option>
+            ))}
+          </select>
+          {garantie === true && (
+            <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">
+              ⚠️ Garantie expirée — ne pas promettre de prise en charge gratuite.
+            </p>
+          )}
+          {garantie === false && (
+            <p className="rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-700">✓ Encore sous garantie.</p>
+          )}
+          {garantie === null && ligneChoisie && (
+            <p className="text-xs text-neutral-500">Durée de garantie non renseignée sur ce produit.</p>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={ouvrir}
+              disabled={envoi || !motif.trim()}
+              className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+            >
+              Ouvrir
+            </button>
+            <button onClick={() => setOuverture(false)} className="text-xs text-neutral-500 hover:underline">
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
+function SAVItem({ sav, onFait }: { sav: SAVAvecCommande; onFait: () => void }) {
+  const [envoi, setEnvoi] = useState(false);
+  const [diagnostic, setDiagnostic] = useState("");
+  const [decision, setDecision] = useState("REPARATION");
+  const [garantieConstructeur, setGarantieConstructeur] = useState(false);
+  const [garantieMagasin, setGarantieMagasin] = useState(false);
+  const [noteCloture, setNoteCloture] = useState("");
+
+  async function diagnostiquer() {
+    if (!diagnostic.trim()) return;
+    setEnvoi(true);
+    await fetch(`/api/sav/${sav.id}/diagnostiquer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ diagnostic, decision, garantieConstructeur, garantieMagasin }),
+    });
+    setEnvoi(false);
+    onFait();
+  }
+
+  async function traiter() {
+    setEnvoi(true);
+    await fetch(`/api/sav/${sav.id}/traiter`, { method: "POST" });
+    setEnvoi(false);
+    onFait();
+  }
+
+  async function cloturer() {
+    setEnvoi(true);
+    await fetch(`/api/sav/${sav.id}/cloturer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ noteCloture: noteCloture || undefined }),
+    });
+    setEnvoi(false);
+    onFait();
+  }
+
+  return (
+    <li className="rounded-md border border-neutral-200 bg-white p-2 text-xs">
+      <div className="flex items-center justify-between">
+        <span className="font-medium text-neutral-800">{sav.motif}</span>
+        <span className="rounded-full bg-neutral-100 px-2 py-0.5 font-medium text-neutral-700">
+          {LIBELLE_STATUT_SAV[sav.statut]}
+        </span>
+      </div>
+
+      {sav.statut === "OUVERT" && (
+        <div className="mt-2 space-y-2">
+          <textarea
+            value={diagnostic}
+            onChange={(e) => setDiagnostic(e.target.value)}
+            rows={2}
+            placeholder="Diagnostic"
+            className="w-full rounded-md border border-neutral-300 px-2 py-1"
+          />
+          <select value={decision} onChange={(e) => setDecision(e.target.value)} className="w-full rounded-md border border-neutral-300 px-2 py-1">
+            <option value="REPARATION">Réparation</option>
+            <option value="ECHANGE">Échange</option>
+            <option value="REMBOURSEMENT">Remboursement</option>
+          </select>
+          <label className="flex items-center gap-1">
+            <input type="checkbox" checked={garantieConstructeur} onChange={(e) => setGarantieConstructeur(e.target.checked)} />
+            Garantie constructeur
+          </label>
+          <label className="flex items-center gap-1">
+            <input type="checkbox" checked={garantieMagasin} onChange={(e) => setGarantieMagasin(e.target.checked)} />
+            Garantie magasin
+          </label>
+          <button
+            onClick={diagnostiquer}
+            disabled={envoi || !diagnostic.trim()}
+            className="rounded-md bg-neutral-900 px-3 py-1 font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Enregistrer le diagnostic
+          </button>
+        </div>
+      )}
+
+      {sav.statut === "DIAGNOSTIQUE" && (
+        <div className="mt-2 space-y-1">
+          <p className="text-neutral-600">
+            {sav.diagnostic} · Décision : {sav.decision ? LIBELLE_DECISION_SAV[sav.decision] : "—"}
+          </p>
+          <button
+            onClick={traiter}
+            disabled={envoi}
+            className="rounded-md bg-neutral-900 px-3 py-1 font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Passer en traitement
+          </button>
+        </div>
+      )}
+
+      {sav.statut === "EN_TRAITEMENT" && (
+        <div className="mt-2 space-y-2">
+          <p className="text-neutral-600">Décision : {sav.decision ? LIBELLE_DECISION_SAV[sav.decision] : "—"}</p>
+          <input
+            value={noteCloture}
+            onChange={(e) => setNoteCloture(e.target.value)}
+            placeholder="Note de clôture (optionnel)"
+            className="w-full rounded-md border border-neutral-300 px-2 py-1"
+          />
+          <button
+            onClick={cloturer}
+            disabled={envoi}
+            className="rounded-md bg-emerald-600 px-3 py-1 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Clôturer
+          </button>
+        </div>
+      )}
+
+      {sav.statut === "CLOTURE" && (
+        <div className="mt-2 space-y-1 text-neutral-500">
+          <p>
+            Décision : {sav.decision ? LIBELLE_DECISION_SAV[sav.decision] : "—"}
+            {sav.noteCloture ? ` — ${sav.noteCloture}` : ""}
+          </p>
+          {sav.commandeRemplacement && (
+            <p className="text-emerald-700">
+              ↳ Commande de remplacement créée ({LIBELLE_STATUT_COMMANDE[sav.commandeRemplacement.statut]}) :{" "}
+              {sav.commandeRemplacement.lignes.map((l) => l.libelleProduit).join(", ")}
+            </p>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
 

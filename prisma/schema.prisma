@@ -210,6 +210,7 @@ model Produit {
   description String?
   prixTTC     Int // en centimes — évite les erreurs d'arrondi flottant sur un prix
   statut      StatutProduit @default(ACTIF)
+  garantieMois Int? // durée de garantie constructeur, si connue — voir module SAV
 
   stocks            Stock[]
   historiquePrix    HistoriquePrix[]
@@ -383,12 +384,20 @@ enum StatutDemandeMutuelle {
 /// (critère d'acceptation V1). Les lignes sont un instantané des lignes de
 /// la proposition au moment du passage de commande (même principe que
 /// PropositionLigne : jamais recalculées après coup).
+/// propositionId et savId sont tous deux optionnels mais mutuellement
+/// significatifs : une commande née d'une vente porte propositionId (V1 des
+/// lots 3-6), une commande de remplacement née d'un échange SAV porte savId
+/// à la place (voir module SAV, Lot 7) — jamais les deux à la fois, vérifié
+/// côté application plutôt que par contrainte SQL, comme le reste de ce
+/// schéma.
 model Commande {
   id         String         @id @default(cuid())
   creeA      DateTime       @default(now())
   modifieA   DateTime       @updatedAt
-  propositionId String
-  proposition   Proposition @relation(fields: [propositionId], references: [id])
+  propositionId String?
+  proposition   Proposition? @relation(fields: [propositionId], references: [id])
+  savId      String?        @unique
+  sav        SAV?           @relation(fields: [savId], references: [id])
   personneId String
   statut     StatutCommande @default(A_PASSER)
   passeeA       DateTime?
@@ -401,6 +410,7 @@ model Commande {
   livraison Livraison?
 
   @@index([propositionId])
+  @@index([savId])
   @@index([personneId])
   @@index([statut])
 }
@@ -423,6 +433,8 @@ model CommandeLigne {
   quantite       Int      @default(1)
   numeroSerie    String? // renseigné au contrôle — utile pour les appareils auditifs
 
+  savs SAV[]
+
   @@index([commandeId])
 }
 
@@ -444,6 +456,7 @@ model Livraison {
   clotureeA          DateTime?
 
   facture Facture?
+  savs    SAV[]
 
   @@index([commandeId])
   @@index([personneId])
@@ -525,4 +538,64 @@ model Avoir {
   motif      String?
 
   @@index([factureId])
+}
+
+// --- Module SAV (Lot 7) -------------------------------------------------------
+// Source : docs/dossier-cadrage.md > "Module — SAV". "Traiter un incident
+// après livraison (casse, gêne, panne d'appareil auditif, retour) en le
+// rattachant au dossier et à la livraison d'origine, plutôt que comme un
+// nouveau dossier déconnecté." Reporté après la V1 dans le cadrage
+// d'origine faute d'historique réel de livraisons — les Lots 5 et 6 en
+// produisent désormais un, ce module peut donc être réalisé. Le suivi
+// garantie fournisseur réel (portail, conditions par contrat) n'est PAS
+// intégré — même limite que les lots précédents.
+
+/// "Un SAV référence toujours une Livraison ou un Produit existant du
+/// dossier — pas de saisie libre déconnectée" (critère d'acceptation V1) :
+/// structurel ici, jamais un SAV sans Livraison. commandeLigneId cible en
+/// plus une ligne précise (utile en audition : quel appareil exact, quel
+/// numéro de série).
+model SAV {
+  id         String     @id @default(cuid())
+  creeA      DateTime   @default(now())
+  modifieA   DateTime   @updatedAt
+  livraisonId String
+  livraison   Livraison @relation(fields: [livraisonId], references: [id])
+  commandeLigneId String?
+  commandeLigne   CommandeLigne? @relation(fields: [commandeLigneId], references: [id])
+  personneId String
+  statut     StatutSAV  @default(OUVERT)
+  motif      String // description de l'incident (casse, gêne, panne, retour…)
+
+  diagnostiqueA DateTime?
+  diagnostic    String?
+  decision      DecisionSAV?
+  garantieConstructeur Boolean @default(false)
+  garantieMagasin      Boolean @default(false)
+
+  traitementA DateTime?
+  clotureA    DateTime?
+  noteCloture String?
+
+  /// "Un SAV clôturé par un échange déclenche automatiquement une nouvelle
+  /// Commande si nécessaire" (critère d'acceptation V1) — commande de
+  /// remplacement, jamais rattachée à une proposition (voir Commande).
+  commandeRemplacement Commande?
+
+  @@index([livraisonId])
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutSAV {
+  OUVERT
+  DIAGNOSTIQUE
+  EN_TRAITEMENT
+  CLOTURE
+}
+
+enum DecisionSAV {
+  REPARATION
+  ECHANGE
+  REMBOURSEMENT
 }

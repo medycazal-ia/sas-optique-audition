@@ -35,6 +35,12 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
   }
 
   const proposition = livraison.commande.proposition;
+  if (!proposition) {
+    return NextResponse.json(
+      { erreur: "Cette livraison est issue d'un remplacement SAV, sans proposition associée — pas de facturation automatique possible ici." },
+      { status: 409 },
+    );
+  }
   const totalProposition = proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
   const montantTTC = proposition.resteAChargeTTC ?? totalProposition;
 

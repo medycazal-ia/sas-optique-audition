@@ -28,8 +28,16 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
         commandes: {
           orderBy: { creeA: "desc" },
           include: {
-            lignes: true,
-            livraison: { include: { facture: { include: { paiements: true, avoirs: true } } } },
+            lignes: { include: { produit: true } },
+            livraison: {
+              include: {
+                facture: { include: { paiements: true, avoirs: true } },
+                savs: {
+                  orderBy: { creeA: "desc" },
+                  include: { commandeRemplacement: { include: { lignes: true } } },
+                },
+              },
+            },
           },
         },
       },

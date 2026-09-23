@@ -46,6 +46,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ erreur: `statut doit être l'un de : ${STATUTS_VALIDES.join(", ")}` }, { status: 400 });
   }
 
+  if ("garantieMois" in body) {
+    const garantieMois = body.garantieMois === null ? null : Number(body.garantieMois);
+    if (garantieMois !== null && (!Number.isInteger(garantieMois) || garantieMois < 0)) {
+      return NextResponse.json({ erreur: "garantieMois doit être un entier positif ou nul." }, { status: 400 });
+    }
+    donnees.garantieMois = garantieMois;
+  }
+
   const nouveauPrix = body.prixTTC !== undefined ? Number(body.prixTTC) : undefined;
   const prixChange = nouveauPrix !== undefined && Number.isFinite(nouveauPrix) && nouveauPrix >= 0;
   if (prixChange) {

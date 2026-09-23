@@ -127,14 +127,14 @@ export const MODULES: Module[] = [
     objectif:
       "Traiter un incident après livraison en le rattachant au dossier et à la livraison d'origine — diagnostic, garantie, réparation, échange, remboursement.",
     perimetre: [
-      "Ouverture depuis la fiche Livraison ou Produit existante",
-      "Gestion de garantie constructeur/magasin",
-      "Réactivation du dossier (nouvelle proposition/commande)",
+      "Ouverture depuis une livraison clôturée du dossier (jamais une saisie libre déconnectée)",
+      "Diagnostic, décision (réparation/échange/remboursement), garantie constructeur/magasin",
+      "Un échange clôturé déclenche automatiquement une commande de remplacement",
     ],
     degrade: "from-cyan-400 to-teal-500",
-    lot: "Lot 8 (V1.1) — à venir",
-    disponible: false,
-    href: "/modules/sav",
+    lot: "Lot 7 — réalisé (suivi garantie manuel, sans portail fournisseur réel)",
+    disponible: true,
+    href: "/dossiers",
   },
   {
     slug: "pilotage",

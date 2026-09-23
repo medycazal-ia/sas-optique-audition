@@ -97,12 +97,14 @@ function FicheProduit({ produit }: { produit: Produit }) {
     description: string;
     statut: string;
     prix: string;
+    garantieMois: string;
   }>({
     marque: produit.marque,
     modele: produit.modele,
     description: produit.description ?? "",
     statut: produit.statut,
     prix: (produit.prixTTC / 100).toFixed(2).replace(".", ","),
+    garantieMois: produit.garantieMois?.toString() ?? "",
   });
   const [envoi, setEnvoi] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -124,6 +126,7 @@ function FicheProduit({ produit }: { produit: Produit }) {
         description: champs.description || null,
         statut: champs.statut,
         prixTTC,
+        garantieMois: champs.garantieMois.trim() ? Number(champs.garantieMois) : null,
       }),
     });
     setEnvoi(false);
@@ -176,6 +179,15 @@ function FicheProduit({ produit }: { produit: Produit }) {
             <option value="RUPTURE">En rupture</option>
             <option value="DISCONTINUE">Discontinué chez le fournisseur</option>
           </select>
+        </label>
+        <label className="block text-sm">
+          Garantie constructeur (mois)
+          <input
+            value={champs.garantieMois}
+            onChange={(e) => setChamps({ ...champs, garantieMois: e.target.value })}
+            placeholder="ex. 24 — laisser vide si inconnue"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
         </label>
         <label className="block text-sm">
           Description
