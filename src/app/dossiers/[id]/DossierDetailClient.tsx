@@ -4,13 +4,16 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type {
+  Avoir,
   Commande,
   CommandeLigne,
   DemandePriseEnCharge,
   Document,
   Evenement,
+  Facture,
   Livraison,
   Ordonnance,
+  Paiement,
   Personne,
   Proposition,
   PropositionLigne,
@@ -25,7 +28,11 @@ type PersonneAvecRelations = Personne & {
   evenements: Evenement[];
 };
 
-type CommandeAvecTout = Commande & { lignes: CommandeLigne[]; livraison: Livraison | null };
+type FactureAvecTout = Facture & { paiements: Paiement[]; avoirs: Avoir[] };
+
+type LivraisonAvecFacture = Livraison & { facture: FactureAvecTout | null };
+
+type CommandeAvecTout = Commande & { lignes: CommandeLigne[]; livraison: LivraisonAvecFacture | null };
 
 type PropositionAvecLignes = Proposition & {
   lignes: PropositionLigne[];
@@ -50,6 +57,7 @@ export default function DossierDetailClient({
         <Propositions dossierId={personne.id} propositions={propositions} />
         <MutuelleEtTiersPayant personne={personne} propositions={propositions} />
         <CommandeEtLivraison propositions={propositions} />
+        <FacturationEtFinancement propositions={propositions} />
         <ConsentementsRgpd personne={personne} />
         <SyntheseBesoin personne={personne} />
         <JournalEvenements evenements={personne.evenements} />
@@ -974,6 +982,240 @@ function LivraisonDetail({ livraison, onFait }: { livraison: Livraison; onFait: 
 
       {livraison.statut === "CLOTUREE" && livraison.clotureeA && (
         <p className="mt-1 text-xs text-emerald-700">Clôturée le {new Date(livraison.clotureeA).toLocaleDateString("fr-FR")}.</p>
+      )}
+    </div>
+  );
+}
+
+const LIBELLE_STATUT_FACTURE: Record<string, string> = {
+  EMISE: "Émise",
+  PAYEE_PARTIELLEMENT: "Payée partiellement",
+  SOLDEE: "Soldée",
+};
+
+function soldeRestantClient(facture: FactureAvecTout): number {
+  const encaisse = facture.paiements.reduce((s, p) => s + p.montantTTC, 0);
+  const avoirsTotal = facture.avoirs.reduce((s, a) => s + a.montantTTC, 0);
+  return facture.montantTTC - encaisse - avoirsTotal;
+}
+
+function factureEnRetardClient(facture: FactureAvecTout, solde: number): boolean {
+  if (solde <= 0) return false;
+  const echeance = new Date(facture.creeA).getTime() + facture.delaiPaiementJours * 86_400_000;
+  return Date.now() > echeance;
+}
+
+function FacturationEtFinancement({ propositions }: { propositions: PropositionAvecLignes[] }) {
+  const router = useRouter();
+  const livraisonsClotureesFacturables = propositions.flatMap((p) =>
+    p.commandes
+      .filter((c) => c.livraison && c.livraison.statut === "CLOTUREE")
+      .map((c) => ({ livraison: c.livraison as LivraisonAvecFacture, proposition: p })),
+  );
+
+  return (
+    <Carte
+      titre="Facturation & financement"
+      sousTitre="Le montant reprend automatiquement le reste à charge validé par la mutuelle — jamais de recalcul manuel."
+      emoji="💳"
+      degrade="from-amber-400 to-rose-500"
+    >
+      {livraisonsClotureesFacturables.length === 0 ? (
+        <p className="text-sm text-neutral-500">Aucune livraison clôturée à facturer pour l&apos;instant.</p>
+      ) : (
+        <ul className="space-y-4">
+          {livraisonsClotureesFacturables.map(({ livraison, proposition }) => (
+            <LivraisonFacture
+              key={livraison.id}
+              livraison={livraison}
+              proposition={proposition}
+              onFait={() => router.refresh()}
+            />
+          ))}
+        </ul>
+      )}
+    </Carte>
+  );
+}
+
+function LivraisonFacture({
+  livraison,
+  proposition,
+  onFait,
+}: {
+  livraison: LivraisonAvecFacture;
+  proposition: PropositionAvecLignes;
+  onFait: () => void;
+}) {
+  const [envoi, setEnvoi] = useState(false);
+
+  async function facturer() {
+    setEnvoi(true);
+    await fetch(`/api/livraisons/${livraison.id}/facture`, { method: "POST" });
+    setEnvoi(false);
+    onFait();
+  }
+
+  return (
+    <li className="rounded-lg border border-neutral-200 p-3">
+      <span className="text-sm text-neutral-700">
+        Livraison du {new Date(livraison.clotureeA ?? livraison.creeA).toLocaleDateString("fr-FR")} · proposition du{" "}
+        {new Date(proposition.creeA).toLocaleDateString("fr-FR")}
+      </span>
+
+      {!livraison.facture ? (
+        <div className="mt-2">
+          <button
+            onClick={facturer}
+            disabled={envoi}
+            className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Facturer
+          </button>
+        </div>
+      ) : (
+        <FactureDetail facture={livraison.facture} onFait={onFait} />
+      )}
+    </li>
+  );
+}
+
+function FactureDetail({ facture, onFait }: { facture: FactureAvecTout; onFait: () => void }) {
+  const [envoi, setEnvoi] = useState(false);
+  const [montantPaiement, setMontantPaiement] = useState("");
+  const [moyen, setMoyen] = useState("");
+  const [montantAvoir, setMontantAvoir] = useState("");
+  const [motifAvoir, setMotifAvoir] = useState("");
+
+  const solde = soldeRestantClient(facture);
+  const enRetard = factureEnRetardClient(facture, solde);
+
+  async function ajouterPaiement() {
+    const centimes = parserPrixEnCentimes(montantPaiement);
+    if (centimes === null || centimes <= 0) return;
+    setEnvoi(true);
+    await fetch(`/api/factures/${facture.id}/paiements`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ montantTTC: centimes, moyen: moyen || undefined }),
+    });
+    setEnvoi(false);
+    setMontantPaiement("");
+    setMoyen("");
+    onFait();
+  }
+
+  async function ajouterAvoir() {
+    const centimes = parserPrixEnCentimes(montantAvoir);
+    if (centimes === null || centimes <= 0) return;
+    setEnvoi(true);
+    await fetch(`/api/factures/${facture.id}/avoirs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ montantTTC: centimes, motif: motifAvoir || undefined }),
+    });
+    setEnvoi(false);
+    setMontantAvoir("");
+    setMotifAvoir("");
+    onFait();
+  }
+
+  async function envoyerRelance() {
+    setEnvoi(true);
+    await fetch(`/api/factures/${facture.id}/relance`, { method: "POST" });
+    setEnvoi(false);
+    onFait();
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-neutral-100 bg-neutral-50 p-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-neutral-700">
+          Facture : {LIBELLE_STATUT_FACTURE[facture.statut]} · {formaterPrix(facture.montantTTC)}
+        </span>
+        {enRetard && (
+          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">⚠️ Impayé</span>
+        )}
+      </div>
+
+      <p className="mt-1 text-xs text-neutral-600">Solde restant : {formaterPrix(Math.max(0, solde))}</p>
+
+      {(facture.paiements.length > 0 || facture.avoirs.length > 0) && (
+        <ul className="mt-1 space-y-0.5 text-xs text-neutral-500">
+          {facture.paiements.map((p) => (
+            <li key={p.id}>
+              + {formaterPrix(p.montantTTC)} encaissé{p.moyen ? ` (${p.moyen})` : ""} le{" "}
+              {new Date(p.creeA).toLocaleDateString("fr-FR")}
+            </li>
+          ))}
+          {facture.avoirs.map((a) => (
+            <li key={a.id}>
+              − {formaterPrix(a.montantTTC)} avoir{a.motif ? ` (${a.motif})` : ""} le{" "}
+              {new Date(a.creeA).toLocaleDateString("fr-FR")}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {facture.statut !== "SOLDEE" && (
+        <div className="mt-2 space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              value={montantPaiement}
+              onChange={(e) => setMontantPaiement(e.target.value)}
+              placeholder="Montant encaissé (€)"
+              className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+            />
+            <input
+              value={moyen}
+              onChange={(e) => setMoyen(e.target.value)}
+              placeholder="Moyen (CB, chèque…)"
+              className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+            />
+            <button
+              onClick={ajouterPaiement}
+              disabled={envoi || !montantPaiement.trim()}
+              className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              Encaisser
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              value={montantAvoir}
+              onChange={(e) => setMontantAvoir(e.target.value)}
+              placeholder="Montant avoir (€)"
+              className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+            />
+            <input
+              value={motifAvoir}
+              onChange={(e) => setMotifAvoir(e.target.value)}
+              placeholder="Motif"
+              className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+            />
+            <button
+              onClick={ajouterAvoir}
+              disabled={envoi || !montantAvoir.trim()}
+              className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+            >
+              Émettre un avoir
+            </button>
+          </div>
+          {enRetard && !facture.relanceEnvoyeeA && (
+            <button
+              onClick={envoyerRelance}
+              disabled={envoi}
+              className="rounded-md border border-red-300 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              Marquer une relance envoyée
+            </button>
+          )}
+          {facture.relanceEnvoyeeA && (
+            <p className="text-xs text-neutral-500">
+              Relancé le {new Date(facture.relanceEnvoyeeA).toLocaleDateString("fr-FR")}.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

@@ -25,7 +25,13 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
       include: {
         lignes: true,
         demandes: { orderBy: { creeA: "desc" } },
-        commandes: { orderBy: { creeA: "desc" }, include: { lignes: true, livraison: true } },
+        commandes: {
+          orderBy: { creeA: "desc" },
+          include: {
+            lignes: true,
+            livraison: { include: { facture: { include: { paiements: true, avoirs: true } } } },
+          },
+        },
       },
     }),
   ]);

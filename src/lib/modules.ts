@@ -110,14 +110,14 @@ export const MODULES: Module[] = [
     objectif:
       "Solder financièrement un dossier — acompte, encaissement, facture, avoir, impayé, relance — sans perdre le lien avec la proposition, la mutuelle et la livraison.",
     perimetre: [
-      "Facture reprenant automatiquement le reste à charge validé",
-      "Suivi des impayés et relances",
-      "V1.1 : paiement fractionné / financement",
+      "Facture émise depuis une livraison clôturée, montant figé sur le reste à charge validé par la mutuelle",
+      "Paiements (événements datés, jamais un solde réécrit) et avoirs toujours liés à leur facture",
+      "Alerte impayé après délai ; V1.1 (paiement fractionné/financement) hors périmètre — cadre réglementaire à valider",
     ],
     degrade: "from-rose-400 to-red-500",
-    lot: "Lot 6 — à venir",
-    disponible: false,
-    href: "/modules/facturation-financement",
+    lot: "Lot 6 — réalisé (V1, hors financement/crédit)",
+    disponible: true,
+    href: "/dossiers",
   },
   {
     slug: "sav",

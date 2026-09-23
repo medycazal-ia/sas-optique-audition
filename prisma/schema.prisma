@@ -443,6 +443,8 @@ model Livraison {
   ajustementDemandeA DateTime?
   clotureeA          DateTime?
 
+  facture Facture?
+
   @@index([commandeId])
   @@index([personneId])
   @@index([statut])
@@ -453,4 +455,74 @@ enum StatutLivraison {
   REMISE
   AJUSTEMENT_DEMANDE
   CLOTUREE
+}
+
+// --- Module Facturation & financement (Lot 6, V1 hors financement/crédit) ---
+// Source : docs/dossier-cadrage.md > "Module — Facturation & financement".
+// "Solder financièrement un dossier — acompte, encaissement, facture, avoir,
+// impayé, relance — sans perdre le lien avec le client ni avec le reste du
+// dossier." Le financement/paiement fractionné (V1.1) est explicitement
+// reporté par le cadrage — cadre réglementaire du crédit à la consommation à
+// valider avec un juriste avant réalisation. Le terminal de paiement réel et
+// l'export comptabilité ne sont PAS intégrés ici (même limite que les lots
+// précédents : faisabilité non vérifiée).
+
+/// "Une facture reprend automatiquement le reste à charge validé par le
+/// module Mutuelle — aucun recalcul manuel" (critère d'acceptation V1) :
+/// montantTTC est figé à l'émission depuis Proposition.resteAChargeTTC (ou
+/// le total de la proposition si aucune mutuelle n'est intervenue), jamais
+/// modifiable ensuite — seul un Avoir peut corriger un montant après coup.
+/// "en impayé" (dossier-cadrage) est un état calculé (retard + solde > 0),
+/// pas persisté ici — même principe que l'alerte de délai de Commande.
+model Facture {
+  id           String        @id @default(cuid())
+  creeA        DateTime      @default(now())
+  modifieA     DateTime      @updatedAt
+  livraisonId  String        @unique
+  livraison    Livraison     @relation(fields: [livraisonId], references: [id])
+  personneId   String
+  statut       StatutFacture @default(EMISE)
+  montantTTC   Int // figé à l'émission, jamais recalculé
+  delaiPaiementJours Int    @default(30)
+  relanceEnvoyeeA    DateTime? // "un impayé après délai génère une tâche de relance visible" (critère V1)
+  notes        String?
+
+  paiements Paiement[]
+  avoirs    Avoir[]
+
+  @@index([livraisonId])
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutFacture {
+  EMISE
+  PAYEE_PARTIELLEMENT
+  SOLDEE
+}
+
+/// "Chaque encaissement est un événement daté, jamais une simple mise à
+/// jour d'un solde" (dossier-cadrage) — append-only, jamais modifié.
+model Paiement {
+  id         String   @id @default(cuid())
+  creeA      DateTime @default(now())
+  factureId  String
+  facture    Facture  @relation(fields: [factureId], references: [id])
+  montantTTC Int
+  moyen      String? // espèces, CB, chèque… texte libre en V1 (pas de terminal intégré)
+
+  @@index([factureId])
+}
+
+/// "Un avoir reste lié à la facture d'origine — jamais un document
+/// indépendant" (critère d'acceptation V1).
+model Avoir {
+  id         String   @id @default(cuid())
+  creeA      DateTime @default(now())
+  factureId  String
+  facture    Facture  @relation(fields: [factureId], references: [id])
+  montantTTC Int
+  motif      String?
+
+  @@index([factureId])
 }
