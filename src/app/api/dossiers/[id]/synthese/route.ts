@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
+import { lireSession } from "@/lib/auth";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -13,6 +14,7 @@ type RouteParams = { params: Promise<{ id: string }> };
  * POST /api/dossiers/:id/synthese/valider pour la validation.
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
+  const session = await lireSession();
   const { id } = await params;
   const body = await request.json();
 
@@ -36,6 +38,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     entite: "Personne",
     entiteId: id,
     personneId: id,
+    acteur: session?.email,
   });
 
   return NextResponse.json(personne);

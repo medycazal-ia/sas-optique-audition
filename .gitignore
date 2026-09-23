@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# stockage local des documents uploadés (dev/démo) — jamais dans git
+/stockage-local/

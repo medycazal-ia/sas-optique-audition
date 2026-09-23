@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { calculerCompletude, ordonnancesPerimees } from "@/lib/completude";
 import DossierDetailClient from "./DossierDetailClient";
+import BarreUtilisateur from "@/components/BarreUtilisateur";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +31,12 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
   return (
     <main className="flex-1 py-12">
       <div className="mx-auto w-full max-w-3xl px-6">
-        <Link href="/dossiers" className="text-sm text-neutral-500 hover:underline">
-          ← Retour aux dossiers
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href="/dossiers" className="text-sm text-neutral-500 hover:underline">
+            ← Retour aux dossiers
+          </Link>
+          <BarreUtilisateur />
+        </div>
 
         <div className="mt-3 flex items-center gap-4">
           <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-fuchsia-500 text-lg font-bold text-white shadow-md">

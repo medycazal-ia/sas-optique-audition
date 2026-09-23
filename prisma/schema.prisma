@@ -19,6 +19,25 @@ datasource db {
 
 // --- Fondations transverses (Lot 0) ----------------------------------------
 
+/// Compte collaborateur (comptoir, back-office). Authentification par
+/// email + mot de passe (hash bcrypt) — pas de gestion de compte client ici,
+/// uniquement le personnel du magasin.
+model Utilisateur {
+  id                 String          @id @default(cuid())
+  creeA              DateTime        @default(now())
+  email              String          @unique
+  nom                String
+  motDePasseHash     String
+  role               RoleUtilisateur @default(COLLABORATEUR)
+  actif              Boolean         @default(true)
+  derniereConnexionA DateTime?
+}
+
+enum RoleUtilisateur {
+  COLLABORATEUR
+  ADMIN
+}
+
 /// Journal d'audit : "chaque écriture significative génère un Événement
 /// journalisé — jamais de modification silencieuse" (modèle de données).
 model Evenement {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
+import { lireSession } from "@/lib/auth";
 
 /**
  * GET /api/dossiers — liste des dossiers (Personne), les plus récents d'abord.
@@ -21,6 +22,7 @@ export async function GET() {
  * 2 minutes avec le strict minimum (identité + contact)".
  */
 export async function POST(request: NextRequest) {
+  const session = await lireSession();
   const body = await request.json();
 
   const prenom = typeof body.prenom === "string" ? body.prenom.trim() : "";
@@ -59,6 +61,7 @@ export async function POST(request: NextRequest) {
     entite: "Personne",
     entiteId: personne.id,
     personneId: personne.id,
+    acteur: session?.email,
     donnees: { prenom, nom },
   });
 

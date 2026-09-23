@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Document, Evenement, Ordonnance, Personne } from "@prisma/client";
 import type { PieceRequise } from "@/lib/completude";
@@ -23,7 +23,7 @@ export default function DossierDetailClient({
     <div className="mt-8">
       <Carrousel>
         <InformationsPersonnelles personne={personne} />
-        <Completude dossierId={personne.id} completude={completude} />
+        <Completude dossierId={personne.id} completude={completude} documents={personne.documents} />
         <ConsentementsRgpd personne={personne} />
         <SyntheseBesoin personne={personne} />
         <JournalEvenements evenements={personne.evenements} />
@@ -151,17 +151,36 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
   );
 }
 
-function Completude({ dossierId, completude }: { dossierId: string; completude: PieceRequise[] }) {
+function Completude({
+  dossierId,
+  completude,
+  documents,
+}: {
+  dossierId: string;
+  completude: PieceRequise[];
+  documents: Document[];
+}) {
   const router = useRouter();
   const [enCours, setEnCours] = useState<string | null>(null);
+  const inputsFichier = useRef<Record<string, HTMLInputElement | null>>({});
 
-  async function marquerObtenue(type: PieceRequise["type"]) {
+  async function marquerVerifieeSansScan(type: PieceRequise["type"]) {
     setEnCours(type);
     await fetch(`/api/dossiers/${dossierId}/documents`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type }),
     });
+    setEnCours(null);
+    router.refresh();
+  }
+
+  async function televerserScan(type: PieceRequise["type"], fichier: File) {
+    setEnCours(type);
+    const formulaire = new FormData();
+    formulaire.append("type", type);
+    formulaire.append("fichier", fichier);
+    await fetch(`/api/dossiers/${dossierId}/documents`, { method: "POST", body: formulaire });
     setEnCours(null);
     router.refresh();
   }
@@ -174,22 +193,55 @@ function Completude({ dossierId, completude }: { dossierId: string; completude: 
       degrade="from-emerald-400 to-teal-500"
     >
       <ul className="divide-y divide-neutral-100">
-        {completude.map((piece) => (
-          <li key={piece.type} className="flex items-center justify-between py-2">
-            <span className="text-sm text-neutral-800">{piece.libelle}</span>
-            {piece.obtenue ? (
-              <span className="text-sm font-medium text-emerald-600">✓ Obtenue</span>
-            ) : (
-              <button
-                onClick={() => marquerObtenue(piece.type)}
-                disabled={enCours === piece.type}
-                className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
-              >
-                {enCours === piece.type ? "…" : "Marquer comme obtenue"}
-              </button>
-            )}
-          </li>
-        ))}
+        {completude.map((piece) => {
+          const document = documents.find((d) => d.type === piece.type);
+          return (
+            <li key={piece.type} className="flex items-center justify-between gap-2 py-2">
+              <span className="text-sm text-neutral-800">{piece.libelle}</span>
+              {piece.obtenue ? (
+                document ? (
+                  <a
+                    href={`/api/dossiers/${dossierId}/documents/${document.id}/telecharger`}
+                    className="text-sm font-medium text-emerald-600 hover:underline"
+                  >
+                    ✓ {document.cheminStockage.startsWith("verifie-sans-scan/") ? "Vérifiée (pas de scan)" : "Voir le scan"}
+                  </a>
+                ) : (
+                  <span className="text-sm font-medium text-emerald-600">✓ Obtenue</span>
+                )
+              ) : (
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={(el) => {
+                      inputsFichier.current[piece.type] = el;
+                    }}
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const fichier = e.target.files?.[0];
+                      if (fichier) televerserScan(piece.type, fichier);
+                    }}
+                  />
+                  <button
+                    onClick={() => inputsFichier.current[piece.type]?.click()}
+                    disabled={enCours === piece.type}
+                    className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                  >
+                    {enCours === piece.type ? "…" : "Scanner / téléverser"}
+                  </button>
+                  <button
+                    onClick={() => marquerVerifieeSansScan(piece.type)}
+                    disabled={enCours === piece.type}
+                    className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    Vérifiée sans scan
+                  </button>
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </Carte>
   );
@@ -276,7 +328,6 @@ function ConsentementLigne({
 function SyntheseBesoin({ personne }: { personne: Personne }) {
   const router = useRouter();
   const [texte, setTexte] = useState(personne.syntheseBesoin ?? "");
-  const [validePar, setValidePar] = useState("");
   const [envoi, setEnvoi] = useState<"brouillon" | "validation" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -297,16 +348,11 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
   }
 
   async function valider() {
-    if (!validePar.trim()) {
-      setMessage("Indiquer qui valide la synthèse.");
-      return;
-    }
     setEnvoi("validation");
     setMessage(null);
+    // Le validateur est l'utilisateur authentifié (session) — plus de saisie libre.
     const reponse = await fetch(`/api/dossiers/${personne.id}/synthese/valider`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ validePar }),
     });
     setEnvoi(null);
     if (reponse.ok) {
@@ -352,12 +398,6 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
           {envoi === "brouillon" ? "Enregistrement…" : "Enregistrer le brouillon"}
         </button>
 
-        <input
-          value={validePar}
-          onChange={(e) => setValidePar(e.target.value)}
-          placeholder="Nom du collaborateur qui valide"
-          className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
-        />
         <button
           onClick={valider}
           disabled={envoi !== null || !texte.trim()}
