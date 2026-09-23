@@ -22,7 +22,11 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
     prisma.proposition.findMany({
       where: { personneId: id },
       orderBy: { creeA: "desc" },
-      include: { lignes: true, demandes: { orderBy: { creeA: "desc" } } },
+      include: {
+        lignes: true,
+        demandes: { orderBy: { creeA: "desc" } },
+        commandes: { orderBy: { creeA: "desc" }, include: { lignes: true, livraison: true } },
+      },
     }),
   ]);
 

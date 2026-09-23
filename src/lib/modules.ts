@@ -93,14 +93,14 @@ export const MODULES: Module[] = [
     objectif:
       "Faire exister, une fois une proposition acceptée, une chaîne commande → réception → contrôle → remise au client → ajustement, sans perte d'information entre chaque étape.",
     perimetre: [
-      "Passage de commande fournisseur",
-      "Réception et contrôle qualité",
-      "Remise client avec ajustement/réglage tracé",
+      "Passage de commande depuis une proposition acceptée (bloqué si mutuelle en attente, sauf forçage tracé)",
+      "Suivi par statut (passée → confirmée → reçue → contrôlée) avec alerte de délai dépassé",
+      "Remise client avec ajustement/réglage tracé ; flux fournisseurs réels non intégrés",
     ],
     degrade: "from-indigo-400 to-violet-500",
-    lot: "Lot 5 — à venir",
-    disponible: false,
-    href: "/modules/commande-livraison",
+    lot: "Lot 5 — réalisé (flux tracé manuellement, sans flux fournisseur réel)",
+    disponible: true,
+    href: "/dossiers",
   },
   {
     slug: "facturation-financement",

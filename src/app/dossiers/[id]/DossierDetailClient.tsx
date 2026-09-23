@@ -4,9 +4,12 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type {
+  Commande,
+  CommandeLigne,
   DemandePriseEnCharge,
   Document,
   Evenement,
+  Livraison,
   Ordonnance,
   Personne,
   Proposition,
@@ -22,7 +25,13 @@ type PersonneAvecRelations = Personne & {
   evenements: Evenement[];
 };
 
-type PropositionAvecLignes = Proposition & { lignes: PropositionLigne[]; demandes: DemandePriseEnCharge[] };
+type CommandeAvecTout = Commande & { lignes: CommandeLigne[]; livraison: Livraison | null };
+
+type PropositionAvecLignes = Proposition & {
+  lignes: PropositionLigne[];
+  demandes: DemandePriseEnCharge[];
+  commandes: CommandeAvecTout[];
+};
 
 export default function DossierDetailClient({
   personne,
@@ -40,6 +49,7 @@ export default function DossierDetailClient({
         <Completude dossierId={personne.id} completude={completude} documents={personne.documents} />
         <Propositions dossierId={personne.id} propositions={propositions} />
         <MutuelleEtTiersPayant personne={personne} propositions={propositions} />
+        <CommandeEtLivraison propositions={propositions} />
         <ConsentementsRgpd personne={personne} />
         <SyntheseBesoin personne={personne} />
         <JournalEvenements evenements={personne.evenements} />
@@ -651,6 +661,321 @@ function DemandeLigne({
         <p className="mt-2 text-xs text-red-600">Refusé{demande.motifRefus ? ` — ${demande.motifRefus}` : ""}.</p>
       )}
     </li>
+  );
+}
+
+const LIBELLE_STATUT_COMMANDE: Record<string, string> = {
+  A_PASSER: "À passer",
+  PASSEE: "Passée",
+  CONFIRMEE: "Confirmée",
+  RECUE: "Reçue",
+  CONTROLEE: "Contrôlée",
+};
+
+const LIBELLE_STATUT_LIVRAISON: Record<string, string> = {
+  PROGRAMMEE: "Programmée",
+  REMISE: "Remise",
+  AJUSTEMENT_DEMANDE: "Ajustement demandé",
+  CLOTUREE: "Clôturée",
+};
+
+function delaiDepasse(commande: Commande): boolean {
+  if (!commande.delaiJoursEstime || !commande.passeeA) return false;
+  if (commande.statut !== "PASSEE" && commande.statut !== "CONFIRMEE") return false;
+  const echeance = new Date(commande.passeeA).getTime() + commande.delaiJoursEstime * 86_400_000;
+  return Date.now() > echeance;
+}
+
+function CommandeEtLivraison({ propositions }: { propositions: PropositionAvecLignes[] }) {
+  const router = useRouter();
+  const acceptees = propositions.filter((p) => p.statut === "ACCEPTEE");
+
+  return (
+    <Carte
+      titre="Commande & livraison"
+      sousTitre="Commander, réceptionner, contrôler et livrer — sans perte d'information entre chaque étape."
+      emoji="📦"
+      degrade="from-indigo-400 to-violet-500"
+    >
+      {acceptees.length === 0 ? (
+        <p className="text-sm text-neutral-500">Aucune proposition acceptée pour l&apos;instant.</p>
+      ) : (
+        <ul className="space-y-4">
+          {acceptees.map((p) => (
+            <PropositionCommande key={p.id} proposition={p} onFait={() => router.refresh()} />
+          ))}
+        </ul>
+      )}
+    </Carte>
+  );
+}
+
+function PropositionCommande({ proposition, onFait }: { proposition: PropositionAvecLignes; onFait: () => void }) {
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const total = proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
+  const commande = proposition.commandes[0];
+
+  async function passerCommande(forcer = false) {
+    setEnvoi(true);
+    setErreur(null);
+    const reponse = await fetch(`/api/propositions/${proposition.id}/commande`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ forcerMalgreMutuelleEnAttente: forcer }),
+    });
+    setEnvoi(false);
+    if (reponse.ok) {
+      onFait();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.astuce ? `${data.erreur} ${data.astuce}` : (data.erreur ?? "Erreur."));
+    }
+  }
+
+  return (
+    <li className="rounded-lg border border-neutral-200 p-3">
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-neutral-700">
+          Proposition du {new Date(proposition.creeA).toLocaleDateString("fr-FR")} · {formaterPrix(total)}
+        </span>
+      </div>
+
+      {!commande ? (
+        <div className="mt-2">
+          <button
+            onClick={() => passerCommande(false)}
+            disabled={envoi}
+            className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Passer commande
+          </button>
+          {erreur && (
+            <div className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+              {erreur}
+              {erreur.includes("forcerMalgreMutuelleEnAttente") && (
+                <button onClick={() => passerCommande(true)} className="ml-2 underline">
+                  Passer commande quand même
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <CommandeDetail commande={commande} onFait={onFait} />
+      )}
+    </li>
+  );
+}
+
+function CommandeDetail({ commande, onFait }: { commande: CommandeAvecTout; onFait: () => void }) {
+  const [envoi, setEnvoi] = useState(false);
+  const [delaiJoursEstime, setDelaiJoursEstime] = useState("");
+  const [numerosSerie, setNumerosSerie] = useState<Record<string, string>>({});
+  const depassee = delaiDepasse(commande);
+
+  async function transition(action: string, body?: unknown) {
+    setEnvoi(true);
+    await fetch(`/api/commandes/${commande.id}/${action}`, {
+      method: "POST",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    setEnvoi(false);
+    onFait();
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-neutral-100 bg-neutral-50 p-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-neutral-700">Commande : {LIBELLE_STATUT_COMMANDE[commande.statut]}</span>
+        {depassee && (
+          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">⚠️ Délai dépassé</span>
+        )}
+      </div>
+
+      {commande.statut === "A_PASSER" && (
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            value={delaiJoursEstime}
+            onChange={(e) => setDelaiJoursEstime(e.target.value)}
+            placeholder="Délai estimé (jours)"
+            className="w-36 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+          />
+          <button
+            onClick={() =>
+              transition("passer", {
+                delaiJoursEstime: Number.isInteger(Number(delaiJoursEstime)) && delaiJoursEstime ? Number(delaiJoursEstime) : null,
+              })
+            }
+            disabled={envoi}
+            className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Marquer passée
+          </button>
+        </div>
+      )}
+
+      {commande.statut === "PASSEE" && (
+        <button
+          onClick={() => transition("confirmer")}
+          disabled={envoi}
+          className="mt-2 rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+        >
+          Marquer confirmée
+        </button>
+      )}
+
+      {commande.statut === "CONFIRMEE" && (
+        <button
+          onClick={() => transition("recevoir")}
+          disabled={envoi}
+          className="mt-2 rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+        >
+          Marquer reçue
+        </button>
+      )}
+
+      {commande.statut === "RECUE" && (
+        <div className="mt-2 space-y-2">
+          {commande.lignes.map((l) => (
+            <div key={l.id} className="flex items-center gap-2">
+              <span className="w-32 truncate text-xs text-neutral-600">{l.libelleProduit}</span>
+              <input
+                value={numerosSerie[l.id] ?? ""}
+                onChange={(e) => setNumerosSerie((n) => ({ ...n, [l.id]: e.target.value }))}
+                placeholder="N° de série (optionnel)"
+                className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+              />
+            </div>
+          ))}
+          <button
+            onClick={() =>
+              transition("controler", {
+                lignes: Object.entries(numerosSerie)
+                  .filter(([, v]) => v.trim())
+                  .map(([ligneId, numeroSerie]) => ({ ligneId, numeroSerie })),
+              })
+            }
+            disabled={envoi}
+            className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Contrôler
+          </button>
+        </div>
+      )}
+
+      {commande.statut === "CONTROLEE" && commande.livraison && (
+        <LivraisonDetail livraison={commande.livraison} onFait={onFait} />
+      )}
+    </div>
+  );
+}
+
+function LivraisonDetail({ livraison, onFait }: { livraison: Livraison; onFait: () => void }) {
+  const [envoi, setEnvoi] = useState(false);
+  const [date, setDate] = useState("");
+  const [ajustement, setAjustement] = useState("");
+
+  async function programmer() {
+    if (!date) return;
+    setEnvoi(true);
+    await fetch(`/api/livraisons/${livraison.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dateProgrammee: new Date(date).toISOString() }),
+    });
+    setEnvoi(false);
+    onFait();
+  }
+
+  async function action(chemin: string, body?: unknown) {
+    setEnvoi(true);
+    await fetch(`/api/livraisons/${livraison.id}/${chemin}`, {
+      method: "POST",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    setEnvoi(false);
+    onFait();
+  }
+
+  return (
+    <div className="mt-2 border-t border-neutral-200 pt-2">
+      <span className="text-xs font-medium text-neutral-700">Livraison : {LIBELLE_STATUT_LIVRAISON[livraison.statut]}</span>
+
+      {livraison.statut === "PROGRAMMEE" && !livraison.dateProgrammee && (
+        <div className="mt-2 flex items-center gap-2">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-md border border-neutral-300 px-2 py-1 text-xs" />
+          <button
+            onClick={programmer}
+            disabled={envoi || !date}
+            className="rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Programmer
+          </button>
+        </div>
+      )}
+
+      {livraison.statut === "PROGRAMMEE" && livraison.dateProgrammee && (
+        <div className="mt-2">
+          <p className="text-xs text-neutral-500">
+            Prévue le {new Date(livraison.dateProgrammee).toLocaleDateString("fr-FR")}.
+          </p>
+          <button
+            onClick={() => action("remettre")}
+            disabled={envoi}
+            className="mt-1 rounded-md bg-neutral-900 px-3 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Marquer remise
+          </button>
+        </div>
+      )}
+
+      {livraison.statut === "REMISE" && (
+        <div className="mt-2 space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              value={ajustement}
+              onChange={(e) => setAjustement(e.target.value)}
+              placeholder="Ajustement/réglage demandé"
+              className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+            />
+            <button
+              onClick={() => ajustement.trim() && action("ajustement", { ajustementDemande: ajustement })}
+              disabled={envoi || !ajustement.trim()}
+              className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+            >
+              Demander
+            </button>
+          </div>
+          <button
+            onClick={() => action("cloturer")}
+            disabled={envoi}
+            className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Clôturer
+          </button>
+        </div>
+      )}
+
+      {livraison.statut === "AJUSTEMENT_DEMANDE" && (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-amber-700">Ajustement : {livraison.ajustementDemande}</p>
+          <button
+            onClick={() => action("cloturer")}
+            disabled={envoi}
+            className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Clôturer
+          </button>
+        </div>
+      )}
+
+      {livraison.statut === "CLOTUREE" && livraison.clotureeA && (
+        <p className="mt-1 text-xs text-emerald-700">Clôturée le {new Date(livraison.clotureeA).toLocaleDateString("fr-FR")}.</p>
+      )}
+    </div>
   );
 }
 
