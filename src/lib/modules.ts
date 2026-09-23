@@ -64,9 +64,9 @@ export const MODULES: Module[] = [
       "Signature électronique du devis retenu",
     ],
     degrade: "from-sky-400 to-blue-500",
-    lot: "Lot 3 — à venir",
-    disponible: false,
-    href: "/modules/devis-proposition",
+    lot: "Lot 3 — réalisé",
+    disponible: true,
+    href: "/dossiers",
   },
   {
     slug: "mutuelle-tiers-payant",

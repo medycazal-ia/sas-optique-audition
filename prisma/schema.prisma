@@ -111,9 +111,10 @@ model Personne {
   syntheseBesoinValideeA   DateTime? // horodatage de la validation humaine — null tant que non validée
   syntheseBesoinValideePar String? // qui a validé
 
-  documents   Document[]
-  ordonnances Ordonnance[]
-  evenements  Evenement[]
+  documents    Document[]
+  ordonnances  Ordonnance[]
+  evenements   Evenement[]
+  propositions Proposition[]
 
   @@index([nom, prenom])
   @@index([foyerId])
@@ -202,8 +203,9 @@ model Produit {
   prixTTC     Int // en centimes — évite les erreurs d'arrondi flottant sur un prix
   statut      StatutProduit @default(ACTIF)
 
-  stocks         Stock[]
-  historiquePrix HistoriquePrix[]
+  stocks            Stock[]
+  historiquePrix    HistoriquePrix[]
+  lignesProposition PropositionLigne[]
 
   @@index([type])
   @@index([marque])
@@ -252,4 +254,62 @@ model HistoriquePrix {
   modifiePar String? // email de l'utilisateur ayant changé le prix
 
   @@index([produitId])
+}
+
+// --- Module Devis & proposition (Lot 3) --------------------------------------
+// Source : docs/dossier-cadrage.md > "Module — Devis & proposition".
+// "Composer une proposition adaptée au besoin et au budget, en gardant la
+// trace de TOUTES les versions, alternatives et du choix final — jamais un
+// simple document qui écrase le précédent."
+
+/// Une proposition n'est jamais supprimée, même refusée ou remplacée — elle
+/// reste consultable dans l'historique du dossier (critère d'acceptation V1).
+/// "remplace" trace explicitement qu'une nouvelle version succède à une
+/// proposition précédente, sans effacer celle-ci.
+model Proposition {
+  id           String            @id @default(cuid())
+  creeA        DateTime          @default(now())
+  modifieA     DateTime          @updatedAt
+  personneId   String
+  personne     Personne          @relation(fields: [personneId], references: [id])
+  statut       StatutProposition @default(BROUILLON)
+  envoyeeA     DateTime?
+  decideeA     DateTime?
+  notes        String?
+  cent100Sante Boolean           @default(false) // dispositif réglementé optique — voir docs/dossier-cadrage.md
+
+  remplaceId   String?      @unique
+  remplace     Proposition? @relation("VersionProposition", fields: [remplaceId], references: [id])
+  remplaceePar Proposition? @relation("VersionProposition")
+
+  lignes PropositionLigne[]
+
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutProposition {
+  BROUILLON
+  ENVOYEE
+  ACCEPTEE
+  REFUSEE
+  EXPIREE
+}
+
+/// Ligne de proposition. prixUnitaireTTC et libelleProduit sont un instantané
+/// pris au moment de l'ajout : le tarif catalogue peut changer après coup
+/// (HistoriquePrix), mais la proposition déjà composée garde le prix promis
+/// au client à cet instant précis — jamais recalculé rétroactivement.
+model PropositionLigne {
+  id              String      @id @default(cuid())
+  creeA           DateTime    @default(now())
+  propositionId   String
+  proposition     Proposition @relation(fields: [propositionId], references: [id])
+  produitId       String
+  produit         Produit     @relation(fields: [produitId], references: [id])
+  libelleProduit  String // instantané "marque modèle" au moment de l'ajout
+  quantite        Int         @default(1)
+  prixUnitaireTTC Int // instantané, en centimes
+
+  @@index([propositionId])
 }

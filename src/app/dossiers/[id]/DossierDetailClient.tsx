@@ -2,8 +2,10 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Document, Evenement, Ordonnance, Personne } from "@prisma/client";
+import Link from "next/link";
+import type { Document, Evenement, Ordonnance, Personne, Proposition, PropositionLigne } from "@prisma/client";
 import type { PieceRequise } from "@/lib/completude";
+import { formaterPrix } from "@/lib/argent";
 import Carrousel from "@/components/Carrousel";
 
 type PersonneAvecRelations = Personne & {
@@ -12,18 +14,23 @@ type PersonneAvecRelations = Personne & {
   evenements: Evenement[];
 };
 
+type PropositionAvecLignes = Proposition & { lignes: PropositionLigne[] };
+
 export default function DossierDetailClient({
   personne,
   completude,
+  propositions,
 }: {
   personne: PersonneAvecRelations;
   completude: PieceRequise[];
+  propositions: PropositionAvecLignes[];
 }) {
   return (
     <div className="mt-8">
       <Carrousel>
         <InformationsPersonnelles personne={personne} />
         <Completude dossierId={personne.id} completude={completude} documents={personne.documents} />
+        <Propositions dossierId={personne.id} propositions={propositions} />
         <ConsentementsRgpd personne={personne} />
         <SyntheseBesoin personne={personne} />
         <JournalEvenements evenements={personne.evenements} />
@@ -243,6 +250,82 @@ function Completude({
           );
         })}
       </ul>
+    </Carte>
+  );
+}
+
+const LIBELLE_STATUT_PROPOSITION: Record<string, string> = {
+  BROUILLON: "Brouillon",
+  ENVOYEE: "Envoyée",
+  ACCEPTEE: "Acceptée",
+  REFUSEE: "Refusée",
+  EXPIREE: "Expirée",
+};
+
+const COULEUR_STATUT_PROPOSITION: Record<string, string> = {
+  BROUILLON: "bg-neutral-200 text-neutral-700",
+  ENVOYEE: "bg-sky-100 text-sky-700",
+  ACCEPTEE: "bg-emerald-100 text-emerald-700",
+  REFUSEE: "bg-red-100 text-red-700",
+  EXPIREE: "bg-amber-100 text-amber-700",
+};
+
+function Propositions({ dossierId, propositions }: { dossierId: string; propositions: PropositionAvecLignes[] }) {
+  const router = useRouter();
+  const [creation, setCreation] = useState(false);
+
+  async function nouvelleProposition() {
+    setCreation(true);
+    const reponse = await fetch(`/api/dossiers/${dossierId}/propositions`, { method: "POST" });
+    setCreation(false);
+    if (reponse.ok) {
+      const proposition = await reponse.json();
+      router.push(`/propositions/${proposition.id}`);
+    }
+  }
+
+  return (
+    <Carte
+      titre="Propositions"
+      sousTitre="Chaque version reste consultable, même refusée ou remplacée."
+      emoji="📝"
+      degrade="from-sky-400 to-blue-500"
+    >
+      {propositions.length === 0 ? (
+        <p className="text-sm text-neutral-500">Aucune proposition composée pour l&apos;instant.</p>
+      ) : (
+        <ul className="space-y-2">
+          {propositions.map((p) => {
+            const total = p.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
+            return (
+              <li key={p.id}>
+                <Link
+                  href={`/propositions/${p.id}`}
+                  className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50"
+                >
+                  <span className="text-neutral-700">
+                    {new Date(p.creeA).toLocaleDateString("fr-FR")} · {p.lignes.length} article(s)
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium text-neutral-900">{formaterPrix(total)}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${COULEUR_STATUT_PROPOSITION[p.statut]}`}>
+                      {LIBELLE_STATUT_PROPOSITION[p.statut]}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <button
+        onClick={nouvelleProposition}
+        disabled={creation}
+        className="mt-4 w-full rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+      >
+        {creation ? "Création…" : "+ Nouvelle proposition"}
+      </button>
     </Carte>
   );
 }

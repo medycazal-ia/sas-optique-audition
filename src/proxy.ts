@@ -3,7 +3,15 @@ import { NOM_COOKIE_SESSION, verifierJetonSession } from "@/lib/session-edge";
 
 // Next.js 16 a renommé le fichier "middleware" en "proxy" (même mécanisme,
 // nouveau nom — voir node_modules/next/dist/docs/.../proxy.md).
-const PREFIXES_PROTEGES = ["/dossiers", "/api/dossiers", "/produits", "/api/produits", "/api/magasins"];
+const PREFIXES_PROTEGES = [
+  "/dossiers",
+  "/api/dossiers",
+  "/produits",
+  "/api/produits",
+  "/api/magasins",
+  "/propositions",
+  "/api/propositions",
+];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -37,5 +45,7 @@ export const config = {
     "/produits/:path*",
     "/api/produits/:path*",
     "/api/magasins/:path*",
+    "/propositions/:path*",
+    "/api/propositions/:path*",
   ],
 };

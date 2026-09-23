@@ -10,14 +10,21 @@ export const dynamic = "force-dynamic";
 export default async function DossierPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const personne = await prisma.personne.findUnique({
-    where: { id },
-    include: {
-      documents: { orderBy: { creeA: "desc" } },
-      ordonnances: { orderBy: { creeA: "desc" } },
-      evenements: { orderBy: { survenuA: "desc" }, take: 30 },
-    },
-  });
+  const [personne, propositions] = await Promise.all([
+    prisma.personne.findUnique({
+      where: { id },
+      include: {
+        documents: { orderBy: { creeA: "desc" } },
+        ordonnances: { orderBy: { creeA: "desc" } },
+        evenements: { orderBy: { survenuA: "desc" }, take: 30 },
+      },
+    }),
+    prisma.proposition.findMany({
+      where: { personneId: id },
+      orderBy: { creeA: "desc" },
+      include: { lignes: true },
+    }),
+  ]);
 
   if (!personne) {
     notFound();
@@ -59,7 +66,7 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      <DossierDetailClient personne={personne} completude={completude} />
+      <DossierDetailClient personne={personne} completude={completude} propositions={propositions} />
     </main>
   );
 }
