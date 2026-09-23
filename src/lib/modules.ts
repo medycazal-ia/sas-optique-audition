@@ -47,9 +47,9 @@ export const MODULES: Module[] = [
       "Historique de prix pour traçabilité",
     ],
     degrade: "from-teal-400 to-emerald-500",
-    lot: "Lot 2 — à venir",
-    disponible: false,
-    href: "/modules/produits-catalogue",
+    lot: "Lot 2 — réalisé",
+    disponible: true,
+    href: "/produits",
   },
   {
     slug: "devis-proposition",

@@ -1,12 +1,14 @@
-// Schéma de données transverse (Lot 0) + module Dossier client (Lot 1).
-// Source : docs/dossier-cadrage.md > "Modèle de données" et "Module — Dossier client".
+// Schéma de données transverse (Lot 0) + module Dossier client (Lot 1) +
+// module Produits & catalogue (Lot 2, optique V1).
+// Source : docs/dossier-cadrage.md > "Modèle de données" et modules
+// "Dossier client" / "Produits & catalogue".
 //
 // Principe directeur du dossier de cadrage : un dossier client unique relie
 // tout (santé, commerce, mutuelle, commande, livraison, finance, service).
 // Les entités des modules non encore réalisés (Proposition, Commande, Facture,
 // SAV, ...) ne sont donc PAS créées ici tant que leur lot n'est pas lancé —
-// seules les entités du Lot 0 (fondations) et du Lot 1 (Dossier client) le sont,
-// pour ne pas figer un schéma sur des modules non spécifiés en détail.
+// seules les entités des lots déjà réalisés le sont, pour ne pas figer un
+// schéma sur des modules non spécifiés en détail.
 
 generator client {
   provider = "prisma-client-js"
@@ -167,4 +169,87 @@ enum TypeDocument {
   JUSTIFICATIF
   DEVIS_SIGNE
   AUTRE
+}
+
+// --- Module Produits & catalogue (Lot 2, optique V1) ------------------------
+// Source : docs/dossier-cadrage.md > "Module — Produits & catalogue".
+// "Donner accès, au moment de composer une proposition, à des produits réels
+// et disponibles — jamais à une promesse théorique déconnectée du stock ou du
+// tarif fournisseur du jour."
+
+/// Point de vente — nécessaire pour le stock multi-magasin (référence marché
+/// MyEasyOptic citée dans docs/dossier-cadrage.md).
+model Magasin {
+  id     String  @id @default(cuid())
+  nom    String
+  ville  String?
+  stocks Stock[]
+}
+
+/// Article catalogue : monture, verre, lentille ou accessoire (V1 optique).
+/// Le tarif courant (prixTTC) est toujours celui affiché — jamais une valeur
+/// mise en cache : chaque changement crée une ligne HistoriquePrix plutôt que
+/// d'écraser silencieusement l'ancien prix (traçabilité en cas de litige).
+model Produit {
+  id          String        @id @default(cuid())
+  creeA       DateTime      @default(now())
+  modifieA    DateTime      @updatedAt
+  type        TypeProduit
+  reference   String        @unique
+  marque      String
+  modele      String
+  description String?
+  prixTTC     Int // en centimes — évite les erreurs d'arrondi flottant sur un prix
+  statut      StatutProduit @default(ACTIF)
+
+  stocks         Stock[]
+  historiquePrix HistoriquePrix[]
+
+  @@index([type])
+  @@index([marque])
+}
+
+enum TypeProduit {
+  MONTURE
+  VERRE
+  LENTILLE
+  ACCESSOIRE
+}
+
+enum StatutProduit {
+  ACTIF
+  RUPTURE
+  DISCONTINUE
+}
+
+/// Disponibilité d'un produit par magasin. "La disponibilité multi-magasin
+/// est consultable avant de promettre un délai au client" (critère
+/// d'acceptation V1). delaiJoursReappro renseigné quand quantite = 0, pour
+/// donner un délai réaliste plutôt qu'une simple rupture sans horizon.
+model Stock {
+  id                String   @id @default(cuid())
+  modifieA          DateTime @updatedAt
+  produitId         String
+  produit           Produit  @relation(fields: [produitId], references: [id])
+  magasinId         String
+  magasin           Magasin  @relation(fields: [magasinId], references: [id])
+  quantite          Int      @default(0)
+  quantiteReservee  Int      @default(0) // engagée sur une proposition en cours, pas encore livrée
+  delaiJoursReappro Int? // renseigné si quantite = 0 : délai fournisseur estimé
+
+  @@unique([produitId, magasinId])
+  @@index([magasinId])
+}
+
+/// Historique de prix — jamais écrasé, pour pouvoir justifier a posteriori le
+/// tarif affiché à un client à une date donnée.
+model HistoriquePrix {
+  id         String   @id @default(cuid())
+  effectifA  DateTime @default(now())
+  produitId  String
+  produit    Produit  @relation(fields: [produitId], references: [id])
+  prixTTC    Int
+  modifiePar String? // email de l'utilisateur ayant changé le prix
+
+  @@index([produitId])
 }
