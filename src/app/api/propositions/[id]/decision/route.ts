@@ -44,5 +44,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     acteur: session?.email,
   });
 
+  // Déclenche le module Mutuelle & tiers payant : une proposition acceptée
+  // doit toujours avoir une demande de prise en charge visible et suivie
+  // (critère d'acceptation V1 du module) — jamais de demande "perdue" faute
+  // de création manuelle.
+  if (decision === "ACCEPTEE") {
+    const demande = await prisma.demandePriseEnCharge.create({
+      data: { propositionId: id, personneId: proposition.personneId },
+    });
+    await journaliser({
+      type: "demande-mutuelle.creee",
+      entite: "DemandePriseEnCharge",
+      entiteId: demande.id,
+      personneId: proposition.personneId,
+      acteur: session?.email,
+    });
+  }
+
   return NextResponse.json(mise_a_jour);
 }

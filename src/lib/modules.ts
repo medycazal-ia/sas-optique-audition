@@ -76,14 +76,14 @@ export const MODULES: Module[] = [
     objectif:
       "Remplacer les échanges manuels avec les mutuelles par un flux suivi et tracé : demande d'accord, réponse, rapprochement, avec blocage explicite si une information manque.",
     perimetre: [
-      "Télétransmission des demandes de prise en charge",
-      "Rapprochement automatique réponse ↔ demande",
-      "Blocage du calcul si mutuelle non renseignée",
+      "Demande de prise en charge déclenchée à l'acceptation d'une proposition, suivie par statut",
+      "Blocage explicite du reste à charge tant que la mutuelle n'est pas renseignée ou refusée explicitement",
+      "Télétransmission réelle (portail tiers) non intégrée — faisabilité non vérifiée, voir docs/dossier-cadrage.md",
     ],
     degrade: "from-fuchsia-400 to-pink-500",
-    lot: "Lot 4 — à venir (à valider avec Medy)",
-    disponible: false,
-    href: "/modules/mutuelle-tiers-payant",
+    lot: "Lot 4 — réalisé (flux tracé manuellement, sans télétransmission réelle)",
+    disponible: true,
+    href: "/dossiers",
   },
   {
     slug: "commande-livraison",

@@ -106,6 +106,14 @@ model Personne {
   consentementSms    Boolean   @default(false)
   consentementSmsA   DateTime?
 
+  // Mutuelle — voir module Mutuelle & tiers payant. mutuelleRefuseeA trace un
+  // refus explicite du client de la renseigner (le blocage du reste à charge
+  // ne s'applique alors plus, mais le refus reste tracé).
+  mutuelleNom            String?
+  mutuelleNumeroAdherent String?
+  mutuelleRenseigneeA    DateTime?
+  mutuelleRefuseeA       DateTime?
+
   // Mini-audit vocal : synthèse IA, jamais actée sans validation humaine explicite.
   syntheseBesoin           String? // texte libre généré par IA puis édité par l'humain
   syntheseBesoinValideeA   DateTime? // horodatage de la validation humaine — null tant que non validée
@@ -278,11 +286,17 @@ model Proposition {
   notes        String?
   cent100Sante Boolean           @default(false) // dispositif réglementé optique — voir docs/dossier-cadrage.md
 
+  // Reste à charge réel, mis à jour uniquement par un accord de prise en
+  // charge mutuelle (module Mutuelle & tiers payant) — jamais recalculé
+  // silencieusement ailleurs. Nul tant qu'aucun accord n'a été enregistré.
+  resteAChargeTTC Int?
+
   remplaceId   String?      @unique
   remplace     Proposition? @relation("VersionProposition", fields: [remplaceId], references: [id])
   remplaceePar Proposition? @relation("VersionProposition")
 
-  lignes PropositionLigne[]
+  lignes   PropositionLigne[]
+  demandes DemandePriseEnCharge[]
 
   @@index([personneId])
   @@index([statut])
@@ -312,4 +326,43 @@ model PropositionLigne {
   prixUnitaireTTC Int // instantané, en centimes
 
   @@index([propositionId])
+}
+
+// --- Module Mutuelle & tiers payant (Lot 4) ----------------------------------
+// Source : docs/dossier-cadrage.md > "Module — Mutuelle & tiers payant".
+// "Remplacer les échanges manuels par mail/téléphone avec les mutuelles par
+// un flux suivi et tracé — plutôt qu'une découverte du problème à
+// l'encaissement." La télétransmission réelle (portail tiers, DRE) n'est PAS
+// intégrée ici : la faisabilité technique n'a pas été vérifiée (voir le
+// "Point d'attention" du module). Ce lot trace le flux manuellement.
+
+/// Demande de prise en charge, déclenchée à l'acceptation d'une Proposition.
+/// "Chaque demande envoyée est visible avec son statut et son délai — pas de
+/// demande perdue faute de suivi" (critère d'acceptation V1).
+model DemandePriseEnCharge {
+  id            String              @id @default(cuid())
+  creeA         DateTime            @default(now())
+  modifieA      DateTime            @updatedAt
+  propositionId String
+  proposition   Proposition         @relation(fields: [propositionId], references: [id])
+  personneId    String
+  statut        StatutDemandeMutuelle @default(A_ENVOYER)
+  envoyeeA      DateTime?
+  reponseA      DateTime?
+
+  // Renseignés uniquement à l'accord — jamais recalculés ailleurs.
+  montantPriseEnChargeTTC Int?
+  motifRefus              String?
+
+  @@index([propositionId])
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutDemandeMutuelle {
+  A_ENVOYER
+  ENVOYEE
+  EN_ATTENTE
+  ACCORD
+  REFUS
 }

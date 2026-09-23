@@ -11,6 +11,7 @@ const PREFIXES_PROTEGES = [
   "/api/magasins",
   "/propositions",
   "/api/propositions",
+  "/api/demandes-mutuelle",
 ];
 
 export async function proxy(request: NextRequest) {
@@ -47,5 +48,6 @@ export const config = {
     "/api/magasins/:path*",
     "/propositions/:path*",
     "/api/propositions/:path*",
+    "/api/demandes-mutuelle/:path*",
   ],
 };

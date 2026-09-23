@@ -3,9 +3,17 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { Document, Evenement, Ordonnance, Personne, Proposition, PropositionLigne } from "@prisma/client";
+import type {
+  DemandePriseEnCharge,
+  Document,
+  Evenement,
+  Ordonnance,
+  Personne,
+  Proposition,
+  PropositionLigne,
+} from "@prisma/client";
 import type { PieceRequise } from "@/lib/completude";
-import { formaterPrix } from "@/lib/argent";
+import { formaterPrix, parserPrixEnCentimes } from "@/lib/argent";
 import Carrousel from "@/components/Carrousel";
 
 type PersonneAvecRelations = Personne & {
@@ -14,7 +22,7 @@ type PersonneAvecRelations = Personne & {
   evenements: Evenement[];
 };
 
-type PropositionAvecLignes = Proposition & { lignes: PropositionLigne[] };
+type PropositionAvecLignes = Proposition & { lignes: PropositionLigne[]; demandes: DemandePriseEnCharge[] };
 
 export default function DossierDetailClient({
   personne,
@@ -31,6 +39,7 @@ export default function DossierDetailClient({
         <InformationsPersonnelles personne={personne} />
         <Completude dossierId={personne.id} completude={completude} documents={personne.documents} />
         <Propositions dossierId={personne.id} propositions={propositions} />
+        <MutuelleEtTiersPayant personne={personne} propositions={propositions} />
         <ConsentementsRgpd personne={personne} />
         <SyntheseBesoin personne={personne} />
         <JournalEvenements evenements={personne.evenements} />
@@ -327,6 +336,321 @@ function Propositions({ dossierId, propositions }: { dossierId: string; proposit
         {creation ? "Création…" : "+ Nouvelle proposition"}
       </button>
     </Carte>
+  );
+}
+
+const LIBELLE_STATUT_DEMANDE: Record<string, string> = {
+  A_ENVOYER: "À envoyer",
+  ENVOYEE: "Envoyée",
+  EN_ATTENTE: "En attente",
+  ACCORD: "Accord",
+  REFUS: "Refus",
+};
+
+const COULEUR_STATUT_DEMANDE: Record<string, string> = {
+  A_ENVOYER: "bg-neutral-200 text-neutral-700",
+  ENVOYEE: "bg-sky-100 text-sky-700",
+  EN_ATTENTE: "bg-sky-100 text-sky-700",
+  ACCORD: "bg-emerald-100 text-emerald-700",
+  REFUS: "bg-red-100 text-red-700",
+};
+
+function MutuelleEtTiersPayant({
+  personne,
+  propositions,
+}: {
+  personne: Personne;
+  propositions: PropositionAvecLignes[];
+}) {
+  const router = useRouter();
+  const mutuelleRenseignee = Boolean(personne.mutuelleNom);
+  const mutuelleRefusee = Boolean(personne.mutuelleRefuseeA) && !mutuelleRenseignee;
+
+  const demandes = propositions.flatMap((p) => p.demandes.map((d) => ({ demande: d, proposition: p })));
+
+  return (
+    <Carte
+      titre="Mutuelle & tiers payant"
+      sousTitre="Un flux suivi, pas un aller-retour de mails — jamais de reste à charge sans mutuelle vérifiée."
+      emoji="🤝"
+      degrade="from-purple-400 to-fuchsia-500"
+    >
+      <MutuelleInfos personne={personne} onFait={() => router.refresh()} />
+
+      <div className="mt-5 border-t border-neutral-100 pt-4">
+        <h3 className="text-sm font-semibold text-neutral-800">Demandes de prise en charge</h3>
+        {demandes.length === 0 ? (
+          <p className="mt-2 text-sm text-neutral-500">
+            Aucune demande pour l&apos;instant — créée automatiquement à l&apos;acceptation d&apos;une proposition.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-3">
+            {demandes.map(({ demande, proposition }) => (
+              <DemandeLigne
+                key={demande.id}
+                demande={demande}
+                proposition={proposition}
+                mutuelleBloquante={!mutuelleRenseignee && !mutuelleRefusee}
+                onFait={() => router.refresh()}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </Carte>
+  );
+}
+
+function MutuelleInfos({ personne, onFait }: { personne: Personne; onFait: () => void }) {
+  const [edition, setEdition] = useState(false);
+  const [nom, setNom] = useState(personne.mutuelleNom ?? "");
+  const [numeroAdherent, setNumeroAdherent] = useState(personne.mutuelleNumeroAdherent ?? "");
+  const [envoi, setEnvoi] = useState(false);
+
+  async function enregistrer() {
+    if (!nom.trim()) return;
+    setEnvoi(true);
+    await fetch(`/api/dossiers/${personne.id}/mutuelle`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mutuelleNom: nom, mutuelleNumeroAdherent: numeroAdherent }),
+    });
+    setEnvoi(false);
+    setEdition(false);
+    onFait();
+  }
+
+  async function refuser() {
+    setEnvoi(true);
+    await fetch(`/api/dossiers/${personne.id}/mutuelle`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refuser: true }),
+    });
+    setEnvoi(false);
+    onFait();
+  }
+
+  if (!edition && personne.mutuelleNom) {
+    return (
+      <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2">
+        <div>
+          <p className="text-sm font-medium text-neutral-800">{personne.mutuelleNom}</p>
+          {personne.mutuelleNumeroAdherent && (
+            <p className="text-xs text-neutral-500">Adhérent n° {personne.mutuelleNumeroAdherent}</p>
+          )}
+        </div>
+        <button onClick={() => setEdition(true)} className="text-xs text-neutral-500 hover:underline">
+          Modifier
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {!edition && personne.mutuelleRefuseeA && (
+        <p className="mb-2 text-xs text-amber-700">
+          Refus explicite tracé le {new Date(personne.mutuelleRefuseeA).toLocaleDateString("fr-FR")}.
+        </p>
+      )}
+      {!edition && !personne.mutuelleRefuseeA && (
+        <p className="mb-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          ⚠️ Mutuelle non renseignée — bloque le calcul du reste à charge tant que non renseignée ou refusée
+          explicitement.
+        </p>
+      )}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input
+          value={nom}
+          onChange={(e) => setNom(e.target.value)}
+          placeholder="Nom de la mutuelle"
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+        />
+        <input
+          value={numeroAdherent}
+          onChange={(e) => setNumeroAdherent(e.target.value)}
+          placeholder="N° adhérent (optionnel)"
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+        />
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          onClick={enregistrer}
+          disabled={envoi || !nom.trim()}
+          className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+        >
+          Enregistrer
+        </button>
+        {!personne.mutuelleRefuseeA && (
+          <button
+            onClick={refuser}
+            disabled={envoi}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+          >
+            Le client refuse de la renseigner
+          </button>
+        )}
+        {edition && (
+          <button onClick={() => setEdition(false)} className="text-xs text-neutral-500 hover:underline">
+            Annuler
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DemandeLigne({
+  demande,
+  proposition,
+  mutuelleBloquante,
+  onFait,
+}: {
+  demande: DemandePriseEnCharge;
+  proposition: PropositionAvecLignes;
+  mutuelleBloquante: boolean;
+  onFait: () => void;
+}) {
+  const [envoi, setEnvoi] = useState(false);
+  const [reponseOuverte, setReponseOuverte] = useState(false);
+  const [montant, setMontant] = useState("");
+  const [motifRefus, setMotifRefus] = useState("");
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  const total = proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
+
+  async function marquerEnvoyee() {
+    setEnvoi(true);
+    await fetch(`/api/demandes-mutuelle/${demande.id}/envoyer`, { method: "POST" });
+    setEnvoi(false);
+    onFait();
+  }
+
+  async function enregistrerAccord() {
+    const centimes = parserPrixEnCentimes(montant);
+    if (centimes === null) {
+      setErreur("Montant pris en charge invalide.");
+      return;
+    }
+    setEnvoi(true);
+    setErreur(null);
+    const reponse = await fetch(`/api/demandes-mutuelle/${demande.id}/reponse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "ACCORD", montantPriseEnChargeTTC: centimes }),
+    });
+    setEnvoi(false);
+    if (reponse.ok) {
+      onFait();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Erreur.");
+    }
+  }
+
+  async function enregistrerRefus() {
+    setEnvoi(true);
+    setErreur(null);
+    await fetch(`/api/demandes-mutuelle/${demande.id}/reponse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "REFUS", motifRefus }),
+    });
+    setEnvoi(false);
+    onFait();
+  }
+
+  return (
+    <li className="rounded-lg border border-neutral-200 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-neutral-700">
+          Proposition du {new Date(proposition.creeA).toLocaleDateString("fr-FR")} · {formaterPrix(total)}
+        </span>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${COULEUR_STATUT_DEMANDE[demande.statut]}`}>
+          {LIBELLE_STATUT_DEMANDE[demande.statut]}
+        </span>
+      </div>
+
+      {demande.statut === "A_ENVOYER" && (
+        <button
+          onClick={marquerEnvoyee}
+          disabled={envoi}
+          className="mt-2 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+        >
+          Marquer envoyée
+        </button>
+      )}
+
+      {(demande.statut === "ENVOYEE" || demande.statut === "EN_ATTENTE") && (
+        <div className="mt-2">
+          {demande.envoyeeA && (
+            <p className="text-xs text-neutral-500">
+              Envoyée le {new Date(demande.envoyeeA).toLocaleDateString("fr-FR")}.
+            </p>
+          )}
+          {!reponseOuverte ? (
+            <button
+              onClick={() => setReponseOuverte(true)}
+              className="mt-1 text-xs font-medium text-sky-700 hover:underline"
+            >
+              Enregistrer la réponse mutuelle
+            </button>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {mutuelleBloquante && (
+                <p className="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                  Renseignez la mutuelle du dossier (ou tracez un refus explicite) avant de pouvoir enregistrer un
+                  accord.
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  value={montant}
+                  onChange={(e) => setMontant(e.target.value)}
+                  placeholder="Montant pris en charge (€)"
+                  disabled={mutuelleBloquante}
+                  className="w-40 rounded-md border border-neutral-300 px-2 py-1 text-xs disabled:opacity-50"
+                />
+                <button
+                  onClick={enregistrerAccord}
+                  disabled={envoi || mutuelleBloquante}
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  Accord
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  value={motifRefus}
+                  onChange={(e) => setMotifRefus(e.target.value)}
+                  placeholder="Motif de refus (optionnel)"
+                  className="w-40 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+                />
+                <button
+                  onClick={enregistrerRefus}
+                  disabled={envoi}
+                  className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Refus
+                </button>
+              </div>
+              {erreur && <p className="text-xs text-red-600">{erreur}</p>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {demande.statut === "ACCORD" && (
+        <p className="mt-2 text-xs text-emerald-700">
+          Pris en charge : {formaterPrix(demande.montantPriseEnChargeTTC ?? 0)} · Reste à charge :{" "}
+          {formaterPrix(proposition.resteAChargeTTC ?? 0)}
+        </p>
+      )}
+      {demande.statut === "REFUS" && (
+        <p className="mt-2 text-xs text-red-600">Refusé{demande.motifRefus ? ` — ${demande.motifRefus}` : ""}.</p>
+      )}
+    </li>
   );
 }
 

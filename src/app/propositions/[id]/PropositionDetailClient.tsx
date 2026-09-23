@@ -93,6 +93,12 @@ export default function PropositionDetailClient({ proposition }: { proposition: 
           <span className="font-semibold text-neutral-900">Total</span>
           <span className="text-lg font-bold text-neutral-900">{formaterPrix(total)}</span>
         </div>
+        {proposition.resteAChargeTTC !== null && (
+          <div className="mt-1 flex items-center justify-between text-sm">
+            <span className="text-emerald-700">Reste à charge (après mutuelle)</span>
+            <span className="font-semibold text-emerald-700">{formaterPrix(proposition.resteAChargeTTC)}</span>
+          </div>
+        )}
       </section>
 
       {estBrouillon && <AjouterProduit propositionId={proposition.id} onFait={actualiser} />}
