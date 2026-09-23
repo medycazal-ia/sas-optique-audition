@@ -1,0 +1,151 @@
+// Schéma de données transverse (Lot 0) + module Dossier client (Lot 1).
+// Source : docs/dossier-cadrage.md > "Modèle de données" et "Module — Dossier client".
+//
+// Principe directeur du dossier de cadrage : un dossier client unique relie
+// tout (santé, commerce, mutuelle, commande, livraison, finance, service).
+// Les entités des modules non encore réalisés (Proposition, Commande, Facture,
+// SAV, ...) ne sont donc PAS créées ici tant que leur lot n'est pas lancé —
+// seules les entités du Lot 0 (fondations) et du Lot 1 (Dossier client) le sont,
+// pour ne pas figer un schéma sur des modules non spécifiés en détail.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Fondations transverses (Lot 0) ----------------------------------------
+
+/// Journal d'audit : "chaque écriture significative génère un Événement
+/// journalisé — jamais de modification silencieuse" (modèle de données).
+model Evenement {
+  id         String    @id @default(cuid())
+  survenuA   DateTime  @default(now())
+  type       String // ex: "personne.creee", "consentement.modifie", "document.ajoute"
+  entite     String // ex: "Personne"
+  entiteId   String // id de l'enregistrement concerné
+  acteur     String? // qui a fait l'action (utilisateur/collaborateur) — nullable en attendant l'auth
+  canal      String    @default("comptoir") // comptoir | web | voix | automatisation
+  donnees    Json? // détail de la modification (avant/après), jamais de données de santé en clair si évitable
+  personneId String?
+  personne   Personne? @relation(fields: [personneId], references: [id])
+
+  @@index([entite, entiteId])
+  @@index([personneId])
+  @@index([survenuA])
+}
+
+// --- Module Dossier client (Lot 1) ------------------------------------------
+
+/// Regroupement de personnes — cas des mutuelles familiales (assuré + ayants droit).
+model Foyer {
+  id        String     @id @default(cuid())
+  creeA     DateTime   @default(now())
+  nom       String? // nom d'usage du foyer, optionnel (ex. "Foyer Dupont")
+  personnes Personne[]
+}
+
+/// Entité centrale du dossier : identité, coordonnées, préférences de contact,
+/// consentements. "Aucun dossier n'a de statut de flux — c'est le socle
+/// permanent" (dossier-cadrage.md, Module Dossier client).
+model Personne {
+  id       String   @id @default(cuid())
+  creeA    DateTime @default(now())
+  modifieA DateTime @updatedAt
+
+  // État civil
+  civilite      String? // M. | Mme | autre — jamais obligatoire
+  prenom        String
+  nom           String
+  dateNaissance DateTime?
+
+  // Coordonnées
+  telephone  String?
+  email      String?
+  adresse    String?
+  codePostal String?
+  ville      String?
+
+  // Rattachement foyer / rôle assuré
+  foyerId    String?
+  foyer      Foyer?     @relation(fields: [foyerId], references: [id])
+  roleAssure RoleAssure @default(NON_RENSEIGNE)
+
+  // Préférences de contact
+  contactPrefereSms   Boolean @default(false)
+  contactPrefereEmail Boolean @default(false)
+
+  // Consentements RGPD — "stockés avec horodatage et modifiables à tout
+  // moment par le client" (critère d'acceptation V1 du module).
+  consentementEmail  Boolean   @default(false)
+  consentementEmailA DateTime?
+  consentementSms    Boolean   @default(false)
+  consentementSmsA   DateTime?
+
+  // Mini-audit vocal : synthèse IA, jamais actée sans validation humaine explicite.
+  syntheseBesoin           String? // texte libre généré par IA puis édité par l'humain
+  syntheseBesoinValideeA   DateTime? // horodatage de la validation humaine — null tant que non validée
+  syntheseBesoinValideePar String? // qui a validé
+
+  documents   Document[]
+  ordonnances Ordonnance[]
+  evenements  Evenement[]
+
+  @@index([nom, prenom])
+  @@index([foyerId])
+}
+
+enum RoleAssure {
+  NON_RENSEIGNE
+  ASSURE
+  AYANT_DROIT
+}
+
+/// Prescription (optique) ou compte-rendu d'analyse (audition), avec renouvellement.
+model Ordonnance {
+  id             String         @id @default(cuid())
+  creeA          DateTime       @default(now())
+  personneId     String
+  personne       Personne       @relation(fields: [personneId], references: [id])
+  type           TypeOrdonnance
+  dateEmission   DateTime
+  dateExpiration DateTime? // pour calculer la "fraîcheur" (ordonnance périmée)
+  emisePar       String? // praticien prescripteur
+  documentId     String?        @unique
+  document       Document?      @relation(fields: [documentId], references: [id])
+
+  @@index([personneId])
+}
+
+enum TypeOrdonnance {
+  OPTIQUE
+  AUDITION
+}
+
+/// Pièce justificative transverse : carte Vitale, carte mutuelle, ordonnance
+/// scannée, devis signé, etc. Le contenu binaire n'est pas stocké en base —
+/// seule la référence de stockage (à définir avec l'hébergeur HDS) l'est.
+model Document {
+  id             String       @id @default(cuid())
+  creeA          DateTime     @default(now())
+  personneId     String
+  personne       Personne     @relation(fields: [personneId], references: [id])
+  type           TypeDocument
+  nomFichier     String
+  cheminStockage String // référence vers le stockage de fichiers (S3-compatible HDS en prod)
+  ordonnance     Ordonnance?
+
+  @@index([personneId])
+}
+
+enum TypeDocument {
+  CARTE_VITALE
+  CARTE_MUTUELLE
+  ORDONNANCE
+  JUSTIFICATIF
+  DEVIS_SIGNE
+  AUTRE
+}

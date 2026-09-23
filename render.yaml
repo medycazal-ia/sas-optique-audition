@@ -1,0 +1,28 @@
+# Blueprint Render pour une VERSION DÉMO uniquement.
+#
+# Important — voir docs/conformite-hds.md : l'hébergement Render standard
+# n'est PAS certifié HDS. Ce blueprint convient pour montrer l'application
+# avec des données fictives, pas pour y saisir de vraies données de client.
+#
+# Déploiement : docs/deploiement-render.md
+
+services:
+  - type: web
+    name: sas-optique-audition
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npx next start -p $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sas-optique-audition-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+
+databases:
+  - name: sas-optique-audition-db
+    plan: starter
+    databaseName: sas_optique_audition
+    user: sasapp
