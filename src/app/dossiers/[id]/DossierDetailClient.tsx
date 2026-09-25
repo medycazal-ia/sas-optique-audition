@@ -2015,7 +2015,7 @@ function ConsentementsRgpd({ personne }: { personne: Personne }) {
   return (
     <Carte
       id={ID_CARTE_CONSENTEMENTS}
-      titre="Consentements RGPD"
+      titre="RGPD"
       sousTitre="Modifiables à tout moment par le client, horodatés à chaque changement."
       emoji="🔐"
       degrade="from-sky-400 to-indigo-500"
