@@ -26,6 +26,7 @@ import { garantieExpiree } from "@/lib/sav";
 import { useModeDemo } from "@/lib/modeDemo";
 import { transposerCylindrePositif, type MesureOeil } from "@/lib/optique";
 import Carrousel from "@/components/Carrousel";
+import CaptureCamera from "@/components/CaptureCamera";
 
 type PersonneAvecRelations = Personne & {
   documents: Document[];
@@ -326,6 +327,7 @@ function Completude({
 }) {
   const router = useRouter();
   const [enCours, setEnCours] = useState<string | null>(null);
+  const [pieceEnCapture, setPieceEnCapture] = useState<{ type: PieceRequise["type"]; libelle: string } | null>(null);
   const inputsFichier = useRef<Record<string, HTMLInputElement | null>>({});
 
   async function marquerVerifieeSansScan(type: PieceRequise["type"]) {
@@ -435,6 +437,13 @@ function Completude({
                     {enCours === piece.type ? "…" : "Scanner / téléverser"}
                   </button>
                   <button
+                    onClick={() => setPieceEnCapture({ type: piece.type, libelle: piece.libelle })}
+                    disabled={enCours === piece.type}
+                    className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    📷 Photo
+                  </button>
+                  <button
                     onClick={() => marquerVerifieeSansScan(piece.type)}
                     disabled={enCours === piece.type}
                     className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
@@ -447,6 +456,18 @@ function Completude({
           );
         })}
       </ul>
+
+      {pieceEnCapture && (
+        <CaptureCamera
+          titre={`Photographier : ${pieceEnCapture.libelle}`}
+          onFermer={() => setPieceEnCapture(null)}
+          onCapture={(fichier) => {
+            const type = pieceEnCapture.type;
+            setPieceEnCapture(null);
+            televerserScan(type, fichier);
+          }}
+        />
+      )}
     </Carte>
   );
 }
