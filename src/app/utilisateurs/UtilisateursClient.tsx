@@ -29,6 +29,8 @@ export default function UtilisateursClient({
     };
     dossiersCrees: string[];
   } | null>(null);
+  const [reinitEnCours, setReinitEnCours] = useState(false);
+  const [reinitResultat, setReinitResultat] = useState<{ dossiersSupprimes: number } | null>(null);
 
   function actualiser() {
     router.refresh();
@@ -36,10 +38,29 @@ export default function UtilisateursClient({
 
   async function amorcerDemo() {
     setDemoEnCours(true);
+    setReinitResultat(null);
     const reponse = await fetch("/api/utilisateurs/demo", { method: "POST" });
     setDemoEnCours(false);
     if (reponse.ok) {
       setDemoResultat(await reponse.json());
+      actualiser();
+    }
+  }
+
+  async function reinitialiserDemo() {
+    if (
+      !window.confirm(
+        "Supprimer pour de bon tout ce qui a été créé sous les comptes démo (dossiers d'exemple et tout ce qui en découle) ? Cette action est irréversible.",
+      )
+    ) {
+      return;
+    }
+    setReinitEnCours(true);
+    setDemoResultat(null);
+    const reponse = await fetch("/api/utilisateurs/demo/reinitialiser", { method: "POST" });
+    setReinitEnCours(false);
+    if (reponse.ok) {
+      setReinitResultat(await reponse.json());
       actualiser();
     }
   }
@@ -60,6 +81,13 @@ export default function UtilisateursClient({
         >
           {demoEnCours ? "…" : "🎬 Créer les comptes démo"}
         </button>
+        <button
+          onClick={reinitialiserDemo}
+          disabled={reinitEnCours}
+          className="rounded-full border-2 border-neutral-300 px-5 py-2.5 text-sm font-semibold text-neutral-600 transition hover:scale-105 hover:bg-neutral-50 disabled:opacity-50"
+        >
+          {reinitEnCours ? "…" : "🔄 Réinitialiser les données démo"}
+        </button>
       </div>
 
       {demoResultat && (
@@ -75,6 +103,18 @@ export default function UtilisateursClient({
           {demoResultat.dossiersCrees.length > 0 && (
             <p className="mt-1 text-xs text-fuchsia-700">Dossiers d&apos;exemple ajoutés : {demoResultat.dossiersCrees.join(", ")}</p>
           )}
+          <p className="mt-2 text-xs text-fuchsia-700">
+            Tout ce qui est créé avec ces comptes est écrit pour de vrai en base — utilisez
+            « Réinitialiser les données démo » pour tout effacer après une présentation.
+          </p>
+        </div>
+      )}
+
+      {reinitResultat && (
+        <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
+          {reinitResultat.dossiersSupprimes > 0
+            ? `${reinitResultat.dossiersSupprimes} dossier(s) démo et toutes leurs données associées ont été supprimés.`
+            : "Aucune donnée démo à supprimer."}
         </div>
       )}
 
@@ -241,6 +281,7 @@ export function LigneUtilisateur({
   onFait,
   onStatut,
   badgeRole,
+  rolesDisponibles = ["COLLABORATEUR", "DIRECTEUR"],
 }: {
   utilisateur: UtilisateurSansHash;
   estMoi: boolean;
@@ -248,8 +289,10 @@ export function LigneUtilisateur({
   onFait: () => void;
   onStatut: (prenom: string, actif: boolean) => void;
   badgeRole?: React.ReactNode;
+  rolesDisponibles?: string[];
 }) {
   const [edition, setEdition] = useState(false);
+  const [editionProfil, setEditionProfil] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [motifBan, setMotifBan] = useState("");
   const [banEnCours, setBanEnCours] = useState(false);
@@ -341,6 +384,30 @@ export function LigneUtilisateur({
             </p>
           )}
 
+          {!utilisateur.banni && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                onClick={() => setEditionProfil((v) => !v)}
+                className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
+              >
+                {editionProfil ? "Annuler la modification" : "✏️ Modifier le profil"}
+              </button>
+            </div>
+          )}
+
+          {editionProfil && (
+            <FormulaireEditionProfil
+              utilisateur={utilisateur}
+              apiBase={apiBase}
+              autoriserRole={!estMoi}
+              rolesDisponibles={rolesDisponibles}
+              onEnregistre={() => {
+                setEditionProfil(false);
+                onFait();
+              }}
+            />
+          )}
+
           {!utilisateur.banni && !estMoi && (
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <button
@@ -386,6 +453,142 @@ export function LigneUtilisateur({
         </div>
       )}
     </li>
+  );
+}
+
+function FormulaireEditionProfil({
+  utilisateur,
+  apiBase,
+  autoriserRole,
+  rolesDisponibles,
+  onEnregistre,
+}: {
+  utilisateur: UtilisateurSansHash;
+  apiBase: string;
+  autoriserRole: boolean;
+  rolesDisponibles: string[];
+  onEnregistre: () => void;
+}) {
+  const [nom, setNom] = useState(utilisateur.nom);
+  const [prenom, setPrenom] = useState(utilisateur.prenom ?? "");
+  const [email, setEmail] = useState(utilisateur.email);
+  const [telephonePerso, setTelephonePerso] = useState(utilisateur.telephonePerso ?? "");
+  const [pseudo, setPseudo] = useState(utilisateur.pseudo ?? "");
+  const [motDePasse, setMotDePasse] = useState("");
+  const [role, setRole] = useState<string>(utilisateur.role);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  // Un rôle SUPER_ADMIN n'est jamais attribuable ni modifiable ici (voir
+  // lib/utilisateurs.ts) — le sélecteur ne doit alors même pas apparaître.
+  const afficherRole = autoriserRole && utilisateur.role !== "SUPER_ADMIN";
+
+  async function enregistrer(e: React.FormEvent) {
+    e.preventDefault();
+    setEnvoi(true);
+    setErreur(null);
+    const reponse = await fetch(`${apiBase}/${utilisateur.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nom,
+        prenom,
+        email,
+        telephonePerso,
+        pseudo,
+        ...(afficherRole ? { role } : {}),
+        ...(motDePasse ? { motDePasse } : {}),
+      }),
+    });
+    setEnvoi(false);
+    if (reponse.ok) {
+      onEnregistre();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Erreur.");
+    }
+  }
+
+  return (
+    <form onSubmit={enregistrer} className="space-y-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="text-xs">
+          Prénom
+          <input
+            value={prenom}
+            onChange={(e) => setPrenom(e.target.value)}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+          />
+        </label>
+        <label className="text-xs">
+          Nom
+          <input
+            value={nom}
+            onChange={(e) => setNom(e.target.value)}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+          />
+        </label>
+        <label className="text-xs sm:col-span-2">
+          Email perso
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+          />
+        </label>
+        <label className="text-xs">
+          Téléphone perso
+          <input
+            value={telephonePerso}
+            onChange={(e) => setTelephonePerso(e.target.value)}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+          />
+        </label>
+        <label className="text-xs">
+          Pseudo choisi
+          <input
+            value={pseudo}
+            onChange={(e) => setPseudo(e.target.value)}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+          />
+        </label>
+        <label className="text-xs">
+          Nouveau mot de passe (laisser vide pour ne pas le changer)
+          <input
+            type="password"
+            minLength={8}
+            value={motDePasse}
+            onChange={(e) => setMotDePasse(e.target.value)}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+          />
+        </label>
+        {afficherRole && (
+          <label className="text-xs">
+            Rôle
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+            >
+              {rolesDisponibles.map((r) => (
+                <option key={r} value={r}>
+                  {LIBELLE_ROLE[r] ?? r}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      {erreur && <p className="text-xs text-red-600">{erreur}</p>}
+      <button
+        type="submit"
+        disabled={envoi}
+        className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+      >
+        {envoi ? "Enregistrement…" : "Enregistrer"}
+      </button>
+    </form>
   );
 }
 

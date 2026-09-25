@@ -153,6 +153,45 @@ export async function modifierUtilisateur(id: string, body: unknown, inclureSupe
   }
 }
 
+/**
+ * Édition de son propre profil — accessible à tout compte connecté, quel
+ * que soit son rôle (contrairement à modifierUtilisateur, réservé au
+ * DIRECTEUR ou plus). Ne touche jamais au rôle, à actif ni à banni : ces
+ * champs restent du seul ressort d'un directeur (ou du super admin).
+ */
+export async function modifierMonProfil(session: SessionUtilisateur, body: unknown) {
+  const moi = await prisma.utilisateur.findUnique({ where: { id: session.id } });
+  if (!moi) throw new ErreurUtilisateur("Compte introuvable.", 404);
+  if (moi.banni) throw new ErreurUtilisateur("Ce compte est banni.", 403);
+
+  const d = (body ?? {}) as Record<string, unknown>;
+  const donnees: Record<string, unknown> = {};
+
+  if (typeof d.nom === "string" && d.nom.trim()) donnees.nom = d.nom.trim();
+  if (typeof d.prenom === "string" && d.prenom.trim()) donnees.prenom = d.prenom.trim();
+  if (typeof d.telephonePerso === "string") donnees.telephonePerso = d.telephonePerso.trim() || null;
+  if (typeof d.pseudo === "string") donnees.pseudo = d.pseudo.trim() || null;
+  if (typeof d.email === "string" && d.email.trim()) {
+    const email = d.email.trim().toLowerCase();
+    if (!email.includes("@")) throw new ErreurUtilisateur("Email invalide.");
+    donnees.email = email;
+  }
+  if (typeof d.motDePasse === "string" && d.motDePasse) {
+    if (d.motDePasse.length < 8) throw new ErreurUtilisateur("Mot de passe d'au moins 8 caractères requis.");
+    donnees.motDePasseHash = await hacherMotDePasse(d.motDePasse);
+  }
+
+  if (Object.keys(donnees).length === 0) {
+    throw new ErreurUtilisateur("Aucun champ valide à mettre à jour.");
+  }
+
+  try {
+    return await prisma.utilisateur.update({ where: { id: session.id }, data: donnees, omit: { motDePasseHash: true } });
+  } catch {
+    throw new ErreurUtilisateur("Cet email ou ce pseudo est déjà utilisé par un autre compte.", 409);
+  }
+}
+
 export async function basculerActif(
   id: string,
   actif: boolean,

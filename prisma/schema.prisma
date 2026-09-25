@@ -115,6 +115,12 @@ model Personne {
   dateNaissance         DateTime?
   numeroSecuriteSociale String? // NIR — optionnel (vente comptoir possible sans), sert aussi à la recherche
 
+  // Marque un dossier créé par (ou pour) un compte démo — jamais posé par un
+  // utilisateur normal. Seul cas où l'application supprime réellement des
+  // données (voir réinitialisation démo), plutôt que de les archiver : ce
+  // n'est jamais une vraie donnée client.
+  estDemo Boolean @default(false)
+
   // Coordonnées
   telephone  String?
   email      String?
