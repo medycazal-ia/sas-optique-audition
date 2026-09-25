@@ -164,6 +164,7 @@ function Carte({
   return (
     <section
       id={id}
+      onClick={() => id && surbrillance.activer(id)}
       className={`anim-pop flex h-[520px] w-[85vw] max-w-[420px] flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-lg transition-shadow ${classesSurbrillance(id, surbrillance)}`}
     >
       <div className={`flex items-center gap-3 bg-gradient-to-r ${degrade} px-6 py-5 text-white`}>
