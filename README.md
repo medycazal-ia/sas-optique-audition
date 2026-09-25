@@ -201,6 +201,28 @@ Resend ne peut écrire qu'à l'adresse du compte lui-même, pas à un tiers.
 Sans clé configurée, l'envoi échoue proprement (message clair) ; "Marquer
 envoyée" (traçage manuel) reste toujours disponible.
 
+## RGPD — information et consentement (carte RGPD)
+
+La carte **RGPD** affiche désormais un troisième canal de consentement,
+**Téléphone**, en plus d'Email et SMS (chacun consenti/refusé et horodaté
+indépendamment — un client peut accepter l'email et refuser le reste).
+
+Une pop-up s'affiche tant que le dossier n'a pas été marqué "informé RGPD"
+(champ `Personne.rgpdInformeA`) : elle explique — en s'appuyant sur les
+obligations réelles du secteur (voir [CNIL, "RGPD et professionnels de
+santé libéraux"](https://www.cnil.fr/fr/rgpd-et-professionnels-de-sante-liberaux-ce-que-vous-devez-savoir))
+— que les données de santé (correction, audiogramme) sont traitées au
+titre du soin sans nécessiter de consentement (article 9.2.h du RGPD),
+mais que contacter le client par email/SMS/téléphone à des fins autres que
+le soin exige un consentement explicite et distinct par canal. Deux façons
+de traiter cette étape :
+- **À l'écran** : le client valide ses choix directement dans l'appli.
+- **Sur papier** : un formulaire pré-rempli (`src/lib/consentementPdf.ts`,
+  librairie [pdf-lib](https://pdf-lib.js.org/)) peut être imprimé, coché et
+  signé à la main — une fois signé, il doit être **scanné et téléversé**
+  (nouveau type de pièce `CONSENTEMENT_RGPD`, carte RGPD) : c'est la preuve
+  du recueil du consentement à conserver en cas de contrôle ou de litige.
+
 ## Conformité données de santé
 
 **Important, à lire avant toute mise en production** :
