@@ -2117,7 +2117,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
   return (
     <Carte
       id={ID_CARTE_SYNTHESE_BESOIN}
-      titre="Synthèse besoin (mini-audit vocal)"
+      titre="Audit"
       sousTitre="Généré par IA, éditable, jamais enregistré définitivement sans validation humaine explicite."
       emoji="🎙️"
       degrade="from-fuchsia-400 to-purple-500"
