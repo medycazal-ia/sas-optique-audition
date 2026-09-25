@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type {
@@ -51,6 +51,31 @@ type PropositionAvecLignes = Proposition & {
 
 const ID_CARTE_FACTURATION = "carte-facturation";
 
+/**
+ * Suivi, pour la durée de cette page seulement (aucune persistance — remis à
+ * zéro au prochain chargement), de la carte/ligne "active" (atteinte par un
+ * clic ou une redirection) et de celles "visitées puis quittées" pendant
+ * cette même session de consultation. Sert à la mise en surbrillance :
+ * contour orange sur l'élément actif, gris léger sur les précédents.
+ */
+const SurbrillanceContext = createContext<{
+  idActif: string | null;
+  idsVisites: Set<string>;
+  activer: (id: string) => void;
+}>({ idActif: null, idsVisites: new Set(), activer: () => {} });
+
+function useSurbrillance() {
+  return useContext(SurbrillanceContext);
+}
+
+/** Classes de contour à appliquer à un élément identifié par `id`. */
+function classesSurbrillance(id: string | undefined, ctx: ReturnType<typeof useSurbrillance>): string {
+  if (!id) return "";
+  if (id === ctx.idActif) return "ring-2 ring-orange-400 ring-offset-2";
+  if (ctx.idsVisites.has(id)) return "ring-1 ring-neutral-300";
+  return "";
+}
+
 export default function DossierDetailClient({
   personne,
   completude,
@@ -62,32 +87,48 @@ export default function DossierDetailClient({
   propositions: PropositionAvecLignes[];
   ventesDirectes: CommandeAvecTout[];
 }) {
+  const [idActif, setIdActif] = useState<string | null>(null);
+  const [idsVisites, setIdsVisites] = useState<Set<string>>(new Set());
+
+  const activer = useCallback((id: string) => {
+    setIdActif((precedent) => {
+      if (precedent && precedent !== id) {
+        setIdsVisites((s) => (s.has(precedent) ? s : new Set(s).add(precedent)));
+      }
+      return id;
+    });
+  }, []);
+
   // Atterrissage depuis la recherche de client de la carte Facturation d'un
   // autre dossier (lien en `#carte-facturation` ou `#facture-xxx` pour une
   // facture précise) : on rejoint directement le bon endroit plutôt que de
-  // laisser l'utilisateur le retrouver lui-même.
+  // laisser l'utilisateur le retrouver lui-même, et on le met en surbrillance.
   useEffect(() => {
     const cible = window.location.hash.slice(1);
     if (cible) {
       document.getElementById(cible)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      activer(cible);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="mt-8">
-      <Carrousel>
-        <InformationsPersonnelles personne={personne} />
-        <Completude dossierId={personne.id} completude={completude} documents={personne.documents} />
-        <Propositions dossierId={personne.id} propositions={propositions} />
-        <MutuelleEtTiersPayant personne={personne} propositions={propositions} />
-        <CommandeEtLivraison propositions={propositions} />
-        <FacturationEtFinancement dossierId={personne.id} propositions={propositions} ventesDirectes={ventesDirectes} />
-        <SAVCarte propositions={propositions} />
-        <ConsentementsRgpd personne={personne} />
-        <SyntheseBesoin personne={personne} />
-        <JournalEvenements evenements={personne.evenements} />
-      </Carrousel>
-    </div>
+    <SurbrillanceContext.Provider value={{ idActif, idsVisites, activer }}>
+      <div className="mt-8">
+        <Carrousel>
+          <InformationsPersonnelles personne={personne} />
+          <Completude dossierId={personne.id} completude={completude} documents={personne.documents} />
+          <Propositions dossierId={personne.id} propositions={propositions} />
+          <MutuelleEtTiersPayant personne={personne} propositions={propositions} />
+          <CommandeEtLivraison propositions={propositions} />
+          <FacturationEtFinancement dossierId={personne.id} propositions={propositions} ventesDirectes={ventesDirectes} />
+          <SAVCarte propositions={propositions} />
+          <ConsentementsRgpd personne={personne} />
+          <SyntheseBesoin personne={personne} />
+          <JournalEvenements evenements={personne.evenements} />
+        </Carrousel>
+      </div>
+    </SurbrillanceContext.Provider>
   );
 }
 
@@ -106,10 +147,11 @@ function Carte({
   degrade: string;
   children: React.ReactNode;
 }) {
+  const surbrillance = useSurbrillance();
   return (
     <section
       id={id}
-      className="anim-pop flex h-[520px] w-[85vw] max-w-[420px] flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-lg"
+      className={`anim-pop flex h-[520px] w-[85vw] max-w-[420px] flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-lg transition-shadow ${classesSurbrillance(id, surbrillance)}`}
     >
       <div className={`flex items-center gap-3 bg-gradient-to-r ${degrade} px-6 py-5 text-white`}>
         <span className="text-3xl drop-shadow-sm">{emoji}</span>
@@ -125,6 +167,7 @@ function Carte({
 
 function InformationsPersonnelles({ personne }: { personne: Personne }) {
   const router = useRouter();
+  const { activer } = useSurbrillance();
   const [champs, setChamps] = useState({
     numeroSecuriteSociale: personne.numeroSecuriteSociale ?? "",
     telephone: personne.telephone ?? "",
@@ -159,6 +202,7 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
     document
       .getElementById(ID_CARTE_FACTURATION)
       ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    activer(ID_CARTE_FACTURATION);
   }
 
   return (
@@ -1123,6 +1167,8 @@ function LivraisonFacture({
   onFait: () => void;
 }) {
   const [envoi, setEnvoi] = useState(false);
+  const surbrillance = useSurbrillance();
+  const idFacture = livraison.facture ? `facture-${livraison.facture.id}` : undefined;
 
   async function facturer() {
     setEnvoi(true);
@@ -1132,7 +1178,10 @@ function LivraisonFacture({
   }
 
   return (
-    <li id={livraison.facture ? `facture-${livraison.facture.id}` : undefined} className="rounded-lg border border-neutral-200 p-3">
+    <li
+      id={idFacture}
+      className={`rounded-lg border border-neutral-200 p-3 transition-shadow ${classesSurbrillance(idFacture, surbrillance)}`}
+    >
       <span className="text-sm text-neutral-700">
         Livraison du {new Date(livraison.clotureeA ?? livraison.creeA).toLocaleDateString("fr-FR")} · {sousTitre}
       </span>
@@ -1193,11 +1242,23 @@ type ClientAvecSolde = Personne & {
 
 function RechercheClientVenteDirecte({ dossierIdActuel }: { dossierIdActuel: string }) {
   const router = useRouter();
+  const { activer, idActif } = useSurbrillance();
   const [terme, setTerme] = useState("");
   const [resultats, setResultats] = useState<ClientAvecSolde[] | null>(null);
   const [recherche, setRecherche] = useState(false);
   const [introuvable, setIntrouvable] = useState(false);
   const requeteEnCours = useRef(0);
+  const champRecherche = useRef<HTMLInputElement>(null);
+
+  // Curseur clignotant prêt à saisir dès que la carte Facturation en général
+  // (pas une facture précise, qui a son propre champ à mettre en avant — voir
+  // FactureDetail) devient active — que ce soit à l'atterrissage (hash au
+  // montage) ou suite à un clic pendant que la page est déjà affichée.
+  useEffect(() => {
+    if (idActif === ID_CARTE_FACTURATION) {
+      champRecherche.current?.focus();
+    }
+  }, [idActif]);
 
   useEffect(() => {
     const analyse = analyserRechercheClient(terme);
@@ -1244,6 +1305,7 @@ function RechercheClientVenteDirecte({ dossierIdActuel }: { dossierIdActuel: str
   function allerA(client: ClientAvecSolde, cible: string) {
     if (client.id === dossierIdActuel) {
       document.getElementById(cible)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      activer(cible);
       return;
     }
     router.push(`/dossiers/${client.id}#${cible}`);
@@ -1262,6 +1324,7 @@ function RechercheClientVenteDirecte({ dossierIdActuel }: { dossierIdActuel: str
     <div className="mt-3">
       <h4 className="text-xs font-semibold text-neutral-700">Client</h4>
       <input
+        ref={champRecherche}
         value={terme}
         onChange={(e) => setTerme(e.target.value)}
         placeholder="Nom, NSS (6 chiffres min.), ou « Nom, Prénom »…"
@@ -1494,9 +1557,20 @@ function FactureDetail({ facture, onFait }: { facture: FactureAvecTout; onFait: 
   const [moyen, setMoyen] = useState("");
   const [montantAvoir, setMontantAvoir] = useState("");
   const [motifAvoir, setMotifAvoir] = useState("");
+  const champMontant = useRef<HTMLInputElement>(null);
+  const { idActif } = useSurbrillance();
 
   const solde = soldeRestantClient(facture);
   const enRetard = factureEnRetardClient(facture, solde);
+
+  // Curseur clignotant directement dans le champ d'encaissement attendu
+  // quand cette facture précise devient active (badge "Règlement en
+  // attente" d'un autre dossier, ou clic dans le même dossier).
+  useEffect(() => {
+    if (idActif === `facture-${facture.id}`) {
+      champMontant.current?.focus();
+    }
+  }, [idActif, facture.id]);
 
   async function ajouterPaiement() {
     const centimes = parserPrixEnCentimes(montantPaiement);
@@ -1569,6 +1643,7 @@ function FactureDetail({ facture, onFait }: { facture: FactureAvecTout; onFait: 
         <div className="mt-2 space-y-2">
           <div className="flex items-center gap-2">
             <input
+              ref={champMontant}
               value={montantPaiement}
               onChange={(e) => setMontantPaiement(e.target.value)}
               placeholder="Montant encaissé (€)"
