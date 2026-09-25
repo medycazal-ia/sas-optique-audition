@@ -219,7 +219,7 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
           />
         </label>
       </div>
-      <div className="mt-4 flex items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           onClick={enregistrer}
           disabled={envoi}
@@ -227,22 +227,19 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
         >
           {envoi ? "Enregistrement…" : "Enregistrer"}
         </button>
-        {message && <span className="text-sm text-neutral-500">{message}</span>}
-      </div>
-
-      <div className="mt-5 border-t border-neutral-100 pt-4">
         <button
           onClick={allerVersVenteDirecte}
           disabled={!identiteComplete}
           title={!identiteComplete ? "Nom et prénom requis avant une vente directe." : undefined}
-          className="w-full rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:from-neutral-300 disabled:to-neutral-300 disabled:text-neutral-500 disabled:shadow-none disabled:hover:scale-100"
+          className="rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-2 text-sm font-semibold text-white shadow-md transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:from-neutral-300 disabled:to-neutral-300 disabled:text-neutral-500 disabled:shadow-none disabled:hover:scale-100"
         >
           🛒 Vente directe
         </button>
-        {!identiteComplete && (
-          <p className="mt-1 text-xs text-neutral-400">Renseignez nom et prénom pour activer la vente directe.</p>
-        )}
+        {message && <span className="text-sm text-neutral-500">{message}</span>}
       </div>
+      {!identiteComplete && (
+        <p className="mt-1 text-xs text-neutral-400">Renseignez nom et prénom pour activer la vente directe.</p>
+      )}
     </Carte>
   );
 }
