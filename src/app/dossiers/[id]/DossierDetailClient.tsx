@@ -49,14 +49,18 @@ type PropositionAvecLignes = Proposition & {
   commandes: CommandeAvecTout[];
 };
 
+const ID_CARTE_FACTURATION = "carte-facturation";
+
 export default function DossierDetailClient({
   personne,
   completude,
   propositions,
+  ventesDirectes,
 }: {
   personne: PersonneAvecRelations;
   completude: PieceRequise[];
   propositions: PropositionAvecLignes[];
+  ventesDirectes: CommandeAvecTout[];
 }) {
   return (
     <div className="mt-8">
@@ -66,7 +70,7 @@ export default function DossierDetailClient({
         <Propositions dossierId={personne.id} propositions={propositions} />
         <MutuelleEtTiersPayant personne={personne} propositions={propositions} />
         <CommandeEtLivraison propositions={propositions} />
-        <FacturationEtFinancement propositions={propositions} />
+        <FacturationEtFinancement dossierId={personne.id} propositions={propositions} ventesDirectes={ventesDirectes} />
         <SAVCarte propositions={propositions} />
         <ConsentementsRgpd personne={personne} />
         <SyntheseBesoin personne={personne} />
@@ -77,12 +81,14 @@ export default function DossierDetailClient({
 }
 
 function Carte({
+  id,
   titre,
   sousTitre,
   emoji,
   degrade,
   children,
 }: {
+  id?: string;
   titre: string;
   sousTitre?: string;
   emoji: string;
@@ -90,7 +96,10 @@ function Carte({
   children: React.ReactNode;
 }) {
   return (
-    <section className="anim-pop flex h-[520px] w-[85vw] max-w-[420px] flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-lg">
+    <section
+      id={id}
+      className="anim-pop flex h-[520px] w-[85vw] max-w-[420px] flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-lg"
+    >
       <div className={`flex items-center gap-3 bg-gradient-to-r ${degrade} px-6 py-5 text-white`}>
         <span className="text-3xl drop-shadow-sm">{emoji}</span>
         <div>
@@ -131,6 +140,14 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
     } else {
       setMessage("Erreur lors de l'enregistrement.");
     }
+  }
+
+  const identiteComplete = Boolean(personne.nom.trim() && personne.prenom.trim());
+
+  function allerVersVenteDirecte() {
+    document
+      .getElementById(ID_CARTE_FACTURATION)
+      ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }
 
   return (
@@ -200,6 +217,20 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
           {envoi ? "Enregistrement…" : "Enregistrer"}
         </button>
         {message && <span className="text-sm text-neutral-500">{message}</span>}
+      </div>
+
+      <div className="mt-5 border-t border-neutral-100 pt-4">
+        <button
+          onClick={allerVersVenteDirecte}
+          disabled={!identiteComplete}
+          title={!identiteComplete ? "Nom et prénom requis avant une vente directe." : undefined}
+          className="w-full rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:from-neutral-300 disabled:to-neutral-300 disabled:text-neutral-500 disabled:shadow-none disabled:hover:scale-100"
+        >
+          🛒 Vente directe
+        </button>
+        {!identiteComplete && (
+          <p className="mt-1 text-xs text-neutral-400">Renseignez nom et prénom pour activer la vente directe.</p>
+        )}
       </div>
     </Carte>
   );
@@ -1025,16 +1056,35 @@ function factureEnRetardClient(facture: FactureAvecTout, solde: number): boolean
   return Date.now() > echeance;
 }
 
-function FacturationEtFinancement({ propositions }: { propositions: PropositionAvecLignes[] }) {
+function FacturationEtFinancement({
+  dossierId,
+  propositions,
+  ventesDirectes,
+}: {
+  dossierId: string;
+  propositions: PropositionAvecLignes[];
+  ventesDirectes: CommandeAvecTout[];
+}) {
   const router = useRouter();
-  const livraisonsClotureesFacturables = propositions.flatMap((p) =>
-    p.commandes
+  const actualiser = () => router.refresh();
+
+  const livraisonsClotureesFacturables = [
+    ...propositions.flatMap((p) =>
+      p.commandes
+        .filter((c) => c.livraison && c.livraison.statut === "CLOTUREE")
+        .map((c) => ({
+          livraison: c.livraison as LivraisonAvecTout,
+          sousTitre: `proposition du ${new Date(p.creeA).toLocaleDateString("fr-FR")}`,
+        })),
+    ),
+    ...ventesDirectes
       .filter((c) => c.livraison && c.livraison.statut === "CLOTUREE")
-      .map((c) => ({ livraison: c.livraison as LivraisonAvecTout, proposition: p })),
-  );
+      .map((c) => ({ livraison: c.livraison as LivraisonAvecTout, sousTitre: "vente directe" })),
+  ];
 
   return (
     <Carte
+      id={ID_CARTE_FACTURATION}
       titre="Facturation & financement"
       sousTitre="Le montant reprend automatiquement le reste à charge validé par la mutuelle — jamais de recalcul manuel."
       emoji="💳"
@@ -1044,27 +1094,24 @@ function FacturationEtFinancement({ propositions }: { propositions: PropositionA
         <p className="text-sm text-neutral-500">Aucune livraison clôturée à facturer pour l&apos;instant.</p>
       ) : (
         <ul className="space-y-4">
-          {livraisonsClotureesFacturables.map(({ livraison, proposition }) => (
-            <LivraisonFacture
-              key={livraison.id}
-              livraison={livraison}
-              proposition={proposition}
-              onFait={() => router.refresh()}
-            />
+          {livraisonsClotureesFacturables.map(({ livraison, sousTitre }) => (
+            <LivraisonFacture key={livraison.id} livraison={livraison} sousTitre={sousTitre} onFait={actualiser} />
           ))}
         </ul>
       )}
+
+      <VenteDirecte dossierId={dossierId} onFait={actualiser} />
     </Carte>
   );
 }
 
 function LivraisonFacture({
   livraison,
-  proposition,
+  sousTitre,
   onFait,
 }: {
   livraison: LivraisonAvecTout;
-  proposition: PropositionAvecLignes;
+  sousTitre: string;
   onFait: () => void;
 }) {
   const [envoi, setEnvoi] = useState(false);
@@ -1079,8 +1126,7 @@ function LivraisonFacture({
   return (
     <li className="rounded-lg border border-neutral-200 p-3">
       <span className="text-sm text-neutral-700">
-        Livraison du {new Date(livraison.clotureeA ?? livraison.creeA).toLocaleDateString("fr-FR")} · proposition du{" "}
-        {new Date(proposition.creeA).toLocaleDateString("fr-FR")}
+        Livraison du {new Date(livraison.clotureeA ?? livraison.creeA).toLocaleDateString("fr-FR")} · {sousTitre}
       </span>
 
       {!livraison.facture ? (
@@ -1097,6 +1143,158 @@ function LivraisonFacture({
         <FactureDetail facture={livraison.facture} onFait={onFait} />
       )}
     </li>
+  );
+}
+
+type LigneVentDirecte = { produit: Produit; quantite: number };
+
+function VenteDirecte({ dossierId, onFait }: { dossierId: string; onFait: () => void }) {
+  const [q, setQ] = useState("");
+  const [resultats, setResultats] = useState<Produit[]>([]);
+  const [recherche, setRecherche] = useState(false);
+  const [panier, setPanier] = useState<LigneVentDirecte[]>([]);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [succes, setSucces] = useState<string | null>(null);
+
+  async function rechercher(event: React.FormEvent) {
+    event.preventDefault();
+    setRecherche(true);
+    const reponse = await fetch(`/api/produits?q=${encodeURIComponent(q)}`);
+    setResultats(await reponse.json());
+    setRecherche(false);
+  }
+
+  function ajouterAuPanier(produit: Produit) {
+    setSucces(null);
+    setPanier((lignes) => {
+      const existante = lignes.find((l) => l.produit.id === produit.id);
+      if (existante) {
+        return lignes.map((l) => (l.produit.id === produit.id ? { ...l, quantite: l.quantite + 1 } : l));
+      }
+      return [...lignes, { produit, quantite: 1 }];
+    });
+  }
+
+  function changerQuantite(produitId: string, quantite: number) {
+    if (quantite < 1) return;
+    setPanier((lignes) => lignes.map((l) => (l.produit.id === produitId ? { ...l, quantite } : l)));
+  }
+
+  function retirerDuPanier(produitId: string) {
+    setPanier((lignes) => lignes.filter((l) => l.produit.id !== produitId));
+  }
+
+  const total = panier.reduce((s, l) => s + l.produit.prixTTC * l.quantite, 0);
+
+  async function vendreEtEncaisser() {
+    if (panier.length === 0) return;
+    setEnvoi(true);
+    setErreur(null);
+    setSucces(null);
+    const reponse = await fetch(`/api/dossiers/${dossierId}/vente-directe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lignes: panier.map((l) => ({ produitId: l.produit.id, quantite: l.quantite })) }),
+    });
+    setEnvoi(false);
+    if (reponse.ok) {
+      setPanier([]);
+      setResultats([]);
+      setQ("");
+      setSucces("Vente enregistrée — encaissez ci-dessus.");
+      onFait();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Erreur.");
+    }
+  }
+
+  return (
+    <div className="mt-5 border-t border-neutral-100 pt-4">
+      <h3 className="text-sm font-semibold text-neutral-800">Vente directe</h3>
+      <p className="mt-1 text-xs text-neutral-500">
+        Vendre un article au comptoir sans devis préalable — facture émise immédiatement.
+      </p>
+
+      <form onSubmit={rechercher} className="mt-2 flex gap-2">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Référence, marque, modèle…"
+          className="flex-1 rounded-full border border-neutral-300 px-3 py-1.5 text-xs"
+        />
+        <button
+          type="submit"
+          disabled={recherche}
+          className="rounded-full bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+        >
+          {recherche ? "…" : "Chercher"}
+        </button>
+      </form>
+
+      {resultats.length > 0 && (
+        <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+          {resultats.map((produit) => (
+            <li
+              key={produit.id}
+              className="flex items-center justify-between gap-2 rounded-md border border-neutral-200 px-2 py-1 text-xs"
+            >
+              <span className="truncate">
+                {produit.marque} {produit.modele} — {formaterPrix(produit.prixTTC)}
+              </span>
+              <button
+                onClick={() => ajouterAuPanier(produit)}
+                className="shrink-0 rounded-md bg-neutral-900 px-2 py-1 text-white hover:bg-neutral-700"
+              >
+                + Panier
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {panier.length > 0 && (
+        <div className="mt-3 rounded-md border border-neutral-200 p-2">
+          <ul className="space-y-1.5">
+            {panier.map(({ produit, quantite }) => (
+              <li key={produit.id} className="flex items-center justify-between gap-2 text-xs">
+                <span className="truncate text-neutral-700">
+                  {produit.marque} {produit.modele}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    value={quantite}
+                    onChange={(e) => changerQuantite(produit.id, Number(e.target.value))}
+                    className="w-12 rounded-md border border-neutral-300 px-1 py-0.5 text-xs"
+                  />
+                  <span className="font-medium text-neutral-900">{formaterPrix(produit.prixTTC * quantite)}</span>
+                  <button onClick={() => retirerDuPanier(produit.id)} className="text-red-500 hover:underline">
+                    Retirer
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 flex items-center justify-between border-t border-neutral-100 pt-2 text-sm font-semibold text-neutral-900">
+            <span>Total</span>
+            <span>{formaterPrix(total)}</span>
+          </div>
+          <button
+            onClick={vendreEtEncaisser}
+            disabled={envoi}
+            className="mt-2 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {envoi ? "…" : "Vendre et encaisser"}
+          </button>
+        </div>
+      )}
+
+      {erreur && <p className="mt-2 text-xs text-red-600">{erreur}</p>}
+      {succes && <p className="mt-2 text-xs text-emerald-700">{succes}</p>}
+    </div>
   );
 }
 
