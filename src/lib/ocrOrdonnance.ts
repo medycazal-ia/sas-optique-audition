@@ -79,17 +79,10 @@ export async function extraireMesuresOrdonnance(contenu: Buffer, nomFichier: str
   const reponse = await client.messages.create({
     model: MODELE,
     max_tokens: 1024,
-    messages: [
-      { role: "user", content: [blocContenu, { type: "text", text: PROMPT }] },
-      // Force une réponse qui commence par "{" — sans ce préremplissage, le
-      // modèle répond parfois par une phrase (excuse, explication) au lieu
-      // du JSON demandé sur une image floue/non conforme, malgré la
-      // consigne — cette technique standard l'en empêche structurellement.
-      { role: "assistant", content: "{" },
-    ],
+    messages: [{ role: "user", content: [blocContenu, { type: "text", text: PROMPT }] }],
   });
 
-  const texte = "{" + (reponse.content.find((bloc) => bloc.type === "text")?.text ?? "");
+  const texte = reponse.content.find((bloc) => bloc.type === "text")?.text ?? "";
   const jsonMatch = texte.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     console.error("Extraction ordonnance — réponse IA sans JSON exploitable :", texte);
