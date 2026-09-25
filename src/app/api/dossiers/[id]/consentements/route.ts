@@ -27,10 +27,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     donnees.consentementSms = body.consentementSms;
     donnees.consentementSmsA = maintenant;
   }
+  if (typeof body.consentementTelephone === "boolean") {
+    donnees.consentementTelephone = body.consentementTelephone;
+    donnees.consentementTelephoneA = maintenant;
+  }
+  // Horodate le moment où le client a été informé des traitements RGPD et a
+  // validé ses choix sur cet écran (voir la pop-up de la carte RGPD) — ne
+  // repasse jamais à null ensuite, une information donnée ne se "retire" pas.
+  if (body.informe === true) {
+    donnees.rgpdInformeA = maintenant;
+  }
 
   if (Object.keys(donnees).length === 0) {
     return NextResponse.json(
-      { erreur: "Préciser consentementEmail et/ou consentementSms (booléen)." },
+      { erreur: "Préciser consentementEmail, consentementSms, consentementTelephone (booléen) et/ou informe: true." },
       { status: 400 },
     );
   }

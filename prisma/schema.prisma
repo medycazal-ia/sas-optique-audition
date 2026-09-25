@@ -138,11 +138,22 @@ model Personne {
   contactPrefereEmail Boolean @default(false)
 
   // Consentements RGPD — "stockés avec horodatage et modifiables à tout
-  // moment par le client" (critère d'acceptation V1 du module).
-  consentementEmail  Boolean   @default(false)
-  consentementEmailA DateTime?
-  consentementSms    Boolean   @default(false)
-  consentementSmsA   DateTime?
+  // moment par le client" (critère d'acceptation V1 du module). Un
+  // consentement distinct par canal de contact (l'email et le SMS/téléphone
+  // ne sont pas la même sollicitation) — voir docs/dossier-cadrage.md.
+  consentementEmail      Boolean   @default(false)
+  consentementEmailA     DateTime?
+  consentementSms        Boolean   @default(false)
+  consentementSmsA       DateTime?
+  consentementTelephone  Boolean   @default(false)
+  consentementTelephoneA DateTime?
+
+  // Horodatage du moment où le client a été informé des traitements RGPD
+  // (données de santé traitées au titre du soin, canaux de contact
+  // commerciaux distincts) et a validé ses choix — sur cet écran ou via le
+  // document papier signé puis scanné (voir TypeDocument.CONSENTEMENT_RGPD).
+  // Tant qu'il est nul, la pop-up RGPD se réaffiche à l'ouverture du dossier.
+  rgpdInformeA DateTime?
 
   // Mutuelle — voir module Mutuelle & tiers payant. mutuelleRefuseeA trace un
   // refus explicite du client de la renseigner (le blocage du reste à charge
@@ -294,6 +305,7 @@ enum TypeDocument {
   ORDONNANCE
   JUSTIFICATIF
   DEVIS_SIGNE
+  CONSENTEMENT_RGPD
   AUTRE
 }
 

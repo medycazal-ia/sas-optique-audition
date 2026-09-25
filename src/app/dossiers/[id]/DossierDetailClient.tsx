@@ -150,7 +150,7 @@ export default function DossierDetailClient({
           <CommandeEtLivraison propositions={propositions} />
           <FacturationEtFinancement dossierId={personne.id} propositions={propositions} ventesDirectes={ventesDirectes} />
           <SAVCarte propositions={propositions} />
-          <ConsentementsRgpd personne={personne} />
+          <ConsentementsRgpd personne={personne} documents={personne.documents} />
           <SyntheseBesoin personne={personne} />
           {estDirecteurAffiche && <JournalEvenements evenements={personne.evenements} />}
         </Carrousel>
@@ -2898,18 +2898,54 @@ function SAVItem({ sav, onFait }: { sav: SAVAvecCommande; onFait: () => void }) 
   );
 }
 
-function ConsentementsRgpd({ personne }: { personne: Personne }) {
+function ConsentementsRgpd({ personne, documents }: { personne: PersonneAvecRelations; documents: Document[] }) {
   const router = useRouter();
-  const [enCours, setEnCours] = useState<"email" | "sms" | null>(null);
+  const [enCours, setEnCours] = useState<"email" | "sms" | "telephone" | null>(null);
+  const [popupOuverte, setPopupOuverte] = useState(!personne.rgpdInformeA);
+  const [envoiDocument, setEnvoiDocument] = useState(false);
+  const inputFichier = useRef<HTMLInputElement | null>(null);
 
-  async function basculer(champ: "consentementEmail" | "consentementSms", valeurActuelle: boolean) {
-    setEnCours(champ === "consentementEmail" ? "email" : "sms");
+  const documentsConsentement = documents
+    .filter((d) => d.type === "CONSENTEMENT_RGPD")
+    .sort((a, b) => new Date(b.creeA).getTime() - new Date(a.creeA).getTime());
+
+  async function basculer(champ: "consentementEmail" | "consentementSms" | "consentementTelephone", valeurActuelle: boolean) {
+    setEnCours(champ === "consentementEmail" ? "email" : champ === "consentementSms" ? "sms" : "telephone");
     await fetch(`/api/dossiers/${personne.id}/consentements`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [champ]: !valeurActuelle }),
     });
     setEnCours(null);
+    router.refresh();
+  }
+
+  async function validerInformation() {
+    await fetch(`/api/dossiers/${personne.id}/consentements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ informe: true }),
+    });
+    setPopupOuverte(false);
+    router.refresh();
+  }
+
+  async function televerserDocumentSigne(fichier: File) {
+    setEnvoiDocument(true);
+    const formulaire = new FormData();
+    formulaire.append("type", "CONSENTEMENT_RGPD");
+    formulaire.append("fichier", fichier);
+    await fetch(`/api/dossiers/${personne.id}/documents`, { method: "POST", body: formulaire });
+    // Le document signé téléversé est la preuve du recueil du consentement
+    // pour le parcours papier — marque l'étape traitée, comme une
+    // validation à l'écran l'aurait fait.
+    await fetch(`/api/dossiers/${personne.id}/consentements`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ informe: true }),
+    });
+    setEnvoiDocument(false);
+    setPopupOuverte(false);
     router.refresh();
   }
 
@@ -2921,6 +2957,23 @@ function ConsentementsRgpd({ personne }: { personne: Personne }) {
       emoji="🔐"
       degrade="from-sky-400 to-indigo-500"
     >
+      {!personne.rgpdInformeA && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span>⚠️ Information RGPD non encore traitée pour ce dossier.</span>
+          <button onClick={() => setPopupOuverte(true)} className="font-medium underline">
+            Traiter maintenant
+          </button>
+        </div>
+      )}
+      {personne.rgpdInformeA && (
+        <p className="mb-3 text-xs text-neutral-500">
+          Information RGPD donnée le {new Date(personne.rgpdInformeA).toLocaleDateString("fr-FR")}.{" "}
+          <button onClick={() => setPopupOuverte(true)} className="text-sky-700 underline">
+            Revoir
+          </button>
+        </p>
+      )}
+
       <div className="space-y-3">
         <ConsentementLigne
           libelle="Email"
@@ -2936,8 +2989,122 @@ function ConsentementsRgpd({ personne }: { personne: Personne }) {
           enCours={enCours === "sms"}
           onBascule={() => basculer("consentementSms", personne.consentementSms)}
         />
+        <ConsentementLigne
+          libelle="Téléphone"
+          actif={personne.consentementTelephone}
+          horodatage={personne.consentementTelephoneA}
+          enCours={enCours === "telephone"}
+          onBascule={() => basculer("consentementTelephone", personne.consentementTelephone)}
+        />
       </div>
+
+      <div className="mt-4 border-t border-neutral-100 pt-3">
+        <p className="text-xs font-medium text-neutral-600">Consentement papier signé</p>
+        {documentsConsentement.length === 0 ? (
+          <p className="mt-1 text-xs text-neutral-500">Aucun document scanné pour l&apos;instant.</p>
+        ) : (
+          <ul className="mt-1 space-y-1">
+            {documentsConsentement.map((d) => (
+              <li key={d.id}>
+                <a
+                  href={`/api/dossiers/${personne.id}/documents/${d.id}/telecharger`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-emerald-600 hover:underline"
+                >
+                  ✓ {new Date(d.creeA).toLocaleDateString("fr-FR")} — {d.nomFichier}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+        <input
+          ref={inputFichier}
+          type="file"
+          accept="image/*,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const fichier = e.target.files?.[0];
+            if (fichier) televerserDocumentSigne(fichier);
+          }}
+        />
+        <button
+          onClick={() => inputFichier.current?.click()}
+          disabled={envoiDocument}
+          className="mt-2 rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+        >
+          {envoiDocument ? "Envoi…" : "📎 Téléverser le document signé"}
+        </button>
+      </div>
+
+      {popupOuverte && (
+        <PopupRgpd
+          personneId={personne.id}
+          onFermer={() => setPopupOuverte(false)}
+          onValider={validerInformation}
+        />
+      )}
     </Carte>
+  );
+}
+
+/**
+ * Pop-up affichée tant que le dossier n'a pas été marqué "informé RGPD" —
+ * inspirée des obligations réelles du secteur (voir CNIL, "RGPD et
+ * professionnels de santé libéraux") : les données de santé (correction,
+ * audiogramme) relèvent du soin et ne demandent pas de consentement du
+ * client (article 9.2.h du RGPD) — mais le client doit en être informé, et
+ * son consentement explicite, canal par canal, reste obligatoire pour toute
+ * sollicitation commerciale (email/SMS/téléphone). Deux façons de traiter
+ * cette étape : valider directement sur cet écran, ou imprimer le
+ * formulaire pour une signature papier (à scanner et conserver ensuite).
+ */
+function PopupRgpd({
+  personneId,
+  onFermer,
+  onValider,
+}: {
+  personneId: string;
+  onFermer: () => void;
+  onValider: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="text-base font-semibold text-neutral-900">🔐 Information RGPD — étape obligatoire</h3>
+        <p className="mt-2 text-sm text-neutral-600">
+          Les données de santé (correction, audiogramme…) sont traitées dans le cadre du soin et ne nécessitent pas
+          de consentement du client — mais il doit en être informé. En revanche, le contacter par email, SMS ou
+          téléphone pour un rendez-vous ou une information commerciale nécessite son{" "}
+          <strong>consentement explicite, distinct pour chaque canal</strong>. Cette étape doit être traitée (informée
+          et actée, même par un refus) avant de poursuivre le dossier.
+        </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <button
+            onClick={onValider}
+            className="rounded-md bg-neutral-900 px-3 py-2 text-xs font-medium text-white hover:bg-neutral-700"
+          >
+            ✅ Le client valide maintenant sur cet écran
+          </button>
+          <a
+            href={`/api/dossiers/${personneId}/consentements/formulaire`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onFermer}
+            className="rounded-md border border-neutral-300 px-3 py-2 text-center text-xs font-medium hover:bg-neutral-50"
+          >
+            🖨️ Imprimer le formulaire à signer sur papier
+          </a>
+        </div>
+        <p className="mt-2 text-xs text-neutral-400">
+          Formulaire papier : à faire cocher/signer par le client, puis scanner et téléverser (ci-dessous dans la
+          carte) — à conserver en cas de contrôle ou de litige.
+        </p>
+        <button onClick={onFermer} className="mt-3 text-xs text-neutral-400 hover:underline">
+          Plus tard
+        </button>
+      </div>
+    </div>
   );
 }
 
