@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { calculerCompletude, ordonnancesPerimees } from "@/lib/completude";
-import { lireSession } from "@/lib/auth";
+import { lireSession, sessionEstDirecteurOuPlus, sessionEstSuperAdmin } from "@/lib/auth";
 import DossierDetailClient from "./DossierDetailClient";
 import BarreUtilisateur from "@/components/BarreUtilisateur";
 
@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
 export default async function DossierPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await lireSession();
-  const estDirecteur = session?.role === "DIRECTEUR";
+  const estDirecteur = sessionEstDirecteurOuPlus(session);
+  const estSuperAdmin = sessionEstSuperAdmin(session);
 
   const [personne, propositions, ventesDirectes] = await Promise.all([
     prisma.personne.findUnique({
@@ -116,7 +117,8 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
         completude={completude}
         propositions={propositions}
         ventesDirectes={ventesDirectes}
-        estDirecteur={estDirecteur}
+        estDirecteurReel={estDirecteur}
+        estSuperAdminReel={estSuperAdmin}
       />
     </main>
   );

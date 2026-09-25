@@ -21,19 +21,62 @@ export default function UtilisateursClient({
   const router = useRouter();
   const [creation, setCreation] = useState(false);
   const [popup, setPopup] = useState<{ prenom: string; actif: boolean } | null>(null);
+  const [demoEnCours, setDemoEnCours] = useState(false);
+  const [demoResultat, setDemoResultat] = useState<{
+    identifiants: {
+      directeur: { email: string; motDePasse: string };
+      collaborateur: { email: string; motDePasse: string };
+    };
+    dossiersCrees: string[];
+  } | null>(null);
 
   function actualiser() {
     router.refresh();
   }
 
+  async function amorcerDemo() {
+    setDemoEnCours(true);
+    const reponse = await fetch("/api/utilisateurs/demo", { method: "POST" });
+    setDemoEnCours(false);
+    if (reponse.ok) {
+      setDemoResultat(await reponse.json());
+      actualiser();
+    }
+  }
+
   return (
     <div className="mt-8 space-y-4">
-      <button
-        onClick={() => setCreation((v) => !v)}
-        className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:scale-105 hover:bg-neutral-700"
-      >
-        {creation ? "Annuler" : "+ Nouvel utilisateur"}
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => setCreation((v) => !v)}
+          className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:scale-105 hover:bg-neutral-700"
+        >
+          {creation ? "Annuler" : "+ Nouvel utilisateur"}
+        </button>
+        <button
+          onClick={amorcerDemo}
+          disabled={demoEnCours}
+          className="rounded-full border-2 border-fuchsia-400 px-5 py-2.5 text-sm font-semibold text-fuchsia-600 transition hover:scale-105 hover:bg-fuchsia-50 disabled:opacity-50"
+        >
+          {demoEnCours ? "…" : "🎬 Créer les comptes démo"}
+        </button>
+      </div>
+
+      {demoResultat && (
+        <div className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-4 text-sm text-fuchsia-900">
+          <p className="font-semibold">Comptes démo prêts :</p>
+          <p className="mt-1">
+            Directeur — {demoResultat.identifiants.directeur.email} / {demoResultat.identifiants.directeur.motDePasse}
+          </p>
+          <p>
+            Collaborateur — {demoResultat.identifiants.collaborateur.email} /{" "}
+            {demoResultat.identifiants.collaborateur.motDePasse}
+          </p>
+          {demoResultat.dossiersCrees.length > 0 && (
+            <p className="mt-1 text-xs text-fuchsia-700">Dossiers d&apos;exemple ajoutés : {demoResultat.dossiersCrees.join(", ")}</p>
+          )}
+        </div>
+      )}
 
       {creation && (
         <FormulaireCreation
