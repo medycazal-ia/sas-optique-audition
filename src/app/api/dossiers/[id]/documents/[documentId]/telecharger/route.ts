@@ -20,11 +20,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   let contenu: Buffer;
   try {
     contenu = await lireFichier(document.cheminStockage);
-  } catch {
-    return NextResponse.json(
-      { erreur: "Aucun fichier scanné pour cette pièce (validée visuellement sans upload)." },
-      { status: 404 },
-    );
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Aucun fichier scanné pour cette pièce.";
+    return NextResponse.json({ erreur: message }, { status: 404 });
   }
 
   return new NextResponse(new Uint8Array(contenu), {

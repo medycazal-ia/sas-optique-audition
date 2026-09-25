@@ -18,7 +18,22 @@ services:
     # build pour tel ou tel paquet dev — mieux vaut les installer tous.
     buildCommand: npm install --include=dev && npx prisma generate && npm run build
     startCommand: npx prisma migrate deploy && npx next start -p $PORT
+    # Disque persistant pour les documents scannés (src/lib/stockageFichiers.ts).
+    # Sans lui, le disque du service est éphémère : chaque redéploiement (un
+    # simple `git push` mergé) efface les fichiers déjà téléversés, alors que
+    # leur ligne Document reste en base (PostgreSQL, lui, persistant) — d'où
+    # une erreur "ENOENT: no such file or directory" en rouvrant un document
+    # téléversé avant le dernier déploiement. Toujours pas une solution de
+    # production HDS (voir docs/conformite-hds.md — il faudra un stockage
+    # S3-compatible chez l'hébergeur certifié retenu), mais suffisant pour
+    # qu'une démo/un test ne perde plus ses fichiers à chaque mise à jour.
+    disk:
+      name: documents
+      mountPath: /var/data/stockage-documents
+      sizeGB: 1
     envVars:
+      - key: STOCKAGE_LOCAL_DOSSIER
+        value: /var/data/stockage-documents
       - key: DATABASE_URL
         fromDatabase:
           name: sas-optique-audition-db
