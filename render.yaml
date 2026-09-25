@@ -42,6 +42,20 @@ services:
       # de l'application fonctionne normalement.
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Envoi automatique par email des demandes de prise en charge (carte
+      # Mutuelle & tiers payant) — clé personnelle à créer sur resend.com,
+      # jamais stockée dans ce fichier ni dans git. Sans cette clé, le
+      # bouton "Envoyer par email" échoue proprement (message d'erreur
+      # clair) — l'envoi manuel ("Marquer envoyée") reste disponible.
+      - key: RESEND_API_KEY
+        sync: false
+      # Adresse d'expédition des emails ci-dessus — doit appartenir à un
+      # domaine vérifié sur resend.com pour pouvoir écrire à un tiers (la
+      # valeur par défaut de test de Resend ne peut écrire qu'au compte
+      # Resend lui-même). Optionnel : sans cette variable, l'envoi utilise
+      # cette valeur de test, donc n'atteint pas réellement les mutuelles.
+      - key: RESEND_FROM
+        sync: false
 
 databases:
   - name: sas-optique-audition-db

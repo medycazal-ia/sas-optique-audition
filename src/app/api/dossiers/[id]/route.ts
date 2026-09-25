@@ -41,6 +41,7 @@ const CHAMPS_MODIFIABLES = [
   "ville",
   "contactPrefereSms",
   "contactPrefereEmail",
+  "roleAssure",
 ] as const;
 
 /**
