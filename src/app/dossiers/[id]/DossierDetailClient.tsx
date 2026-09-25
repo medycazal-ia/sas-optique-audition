@@ -24,6 +24,7 @@ import type { PieceRequise } from "@/lib/completude";
 import { formaterPrix, parserPrixEnCentimes } from "@/lib/argent";
 import { garantieExpiree } from "@/lib/sav";
 import { useModeDemo } from "@/lib/modeDemo";
+import { transposerCylindrePositif, type MesureOeil } from "@/lib/optique";
 import Carrousel from "@/components/Carrousel";
 
 type PersonneAvecRelations = Personne & {
@@ -137,7 +138,12 @@ export default function DossierDetailClient({
         <Carrousel>
           <InformationsPersonnelles personne={personne} />
           <Completude dossierId={personne.id} completude={completude} documents={personne.documents} />
-          <Propositions dossierId={personne.id} propositions={propositions} />
+          <Propositions
+            dossierId={personne.id}
+            propositions={propositions}
+            ordonnances={personne.ordonnances}
+            documents={personne.documents}
+          />
           <MutuelleEtTiersPayant personne={personne} propositions={propositions} />
           <CommandeEtLivraison propositions={propositions} />
           <FacturationEtFinancement dossierId={personne.id} propositions={propositions} ventesDirectes={ventesDirectes} />
@@ -461,7 +467,17 @@ const COULEUR_STATUT_PROPOSITION: Record<string, string> = {
   EXPIREE: "bg-amber-100 text-amber-700",
 };
 
-function Propositions({ dossierId, propositions }: { dossierId: string; propositions: PropositionAvecLignes[] }) {
+function Propositions({
+  dossierId,
+  propositions,
+  ordonnances,
+  documents,
+}: {
+  dossierId: string;
+  propositions: PropositionAvecLignes[];
+  ordonnances: Ordonnance[];
+  documents: Document[];
+}) {
   const router = useRouter();
   const [creation, setCreation] = useState(false);
 
@@ -483,6 +499,9 @@ function Propositions({ dossierId, propositions }: { dossierId: string; proposit
       emoji="📝"
       degrade="from-sky-400 to-blue-500"
     >
+      <CorrectionClient dossierId={dossierId} ordonnances={ordonnances} documents={documents} />
+
+      <p className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-neutral-400">Propositions</p>
       {propositions.length === 0 ? (
         <p className="text-sm text-neutral-500">Aucune proposition composée pour l&apos;instant.</p>
       ) : (
@@ -519,6 +538,330 @@ function Propositions({ dossierId, propositions }: { dossierId: string; proposit
         {creation ? "Création…" : "+ Nouvelle proposition"}
       </button>
     </Carte>
+  );
+}
+
+/**
+ * Correction du client (sphère/cylindre/axe/addition par œil) — lue soit à
+ * la main, soit extraite automatiquement (OCR par IA de vision) d'un scan
+ * d'ordonnance de la carte Santé. Toujours saisie/stockée en cylindre
+ * négatif (convention des ophtalmologistes français) ; le cylindre positif
+ * (convention verrier/opticien) est calculé à l'affichage, jamais stocké en
+ * double — voir lib/optique.ts.
+ */
+function CorrectionClient({
+  dossierId,
+  ordonnances,
+  documents,
+}: {
+  dossierId: string;
+  ordonnances: Ordonnance[];
+  documents: Document[];
+}) {
+  const router = useRouter();
+  const [edition, setEdition] = useState(false);
+  const [extractionEnCours, setExtractionEnCours] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  const derniere =
+    ordonnances
+      .filter((o) => o.type === "OPTIQUE")
+      .sort((a, b) => new Date(b.dateEmission).getTime() - new Date(a.dateEmission).getTime())[0] ?? null;
+
+  const documentOrdonnanceScanne = documents.find(
+    (d) => d.type === "ORDONNANCE" && !d.cheminStockage.startsWith("verifie-sans-scan/"),
+  );
+
+  async function extraireOcr() {
+    if (!documentOrdonnanceScanne) return;
+    setExtractionEnCours(true);
+    setErreur(null);
+    const reponse = await fetch(`/api/dossiers/${dossierId}/ordonnances/extraire`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentId: documentOrdonnanceScanne.id }),
+    });
+    setExtractionEnCours(false);
+    if (reponse.ok) {
+      router.refresh();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Échec de l'extraction OCR.");
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">👓 Correction du client</p>
+        <div className="flex items-center gap-2">
+          {documentOrdonnanceScanne && (
+            <button
+              onClick={extraireOcr}
+              disabled={extractionEnCours}
+              className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {extractionEnCours ? "Extraction…" : "🤖 Extraire de l'ordonnance"}
+            </button>
+          )}
+          <button
+            onClick={() => setEdition((v) => !v)}
+            className="rounded-full border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-600 hover:bg-white"
+          >
+            {edition ? "Fermer" : derniere ? "✏️ Modifier" : "+ Saisir manuellement"}
+          </button>
+        </div>
+      </div>
+
+      {erreur && <p className="mt-2 text-xs text-red-600">{erreur}</p>}
+
+      {derniere && !edition && (
+        <div className="mt-2">
+          {derniere.extraitParOcrA && (
+            <p className="mb-2 text-xs text-amber-700">
+              🤖 Extrait automatiquement le {new Date(derniere.extraitParOcrA).toLocaleDateString("fr-FR")} — à vérifier.
+            </p>
+          )}
+          <TableauCorrection ordonnance={derniere} />
+        </div>
+      )}
+
+      {!derniere && !edition && (
+        <p className="mt-2 text-sm text-neutral-500">Aucune correction renseignée pour l&apos;instant.</p>
+      )}
+
+      {edition && (
+        <FormulaireCorrection
+          dossierId={dossierId}
+          ordonnance={derniere}
+          onEnregistre={() => {
+            setEdition(false);
+            router.refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TableauCorrection({ ordonnance }: { ordonnance: Ordonnance }) {
+  const od: MesureOeil = {
+    sphere: ordonnance.sphereOD,
+    cylindre: ordonnance.cylindreOD,
+    axe: ordonnance.axeOD,
+    addition: ordonnance.additionOD,
+  };
+  const og: MesureOeil = {
+    sphere: ordonnance.sphereOG,
+    cylindre: ordonnance.cylindreOG,
+    axe: ordonnance.axeOG,
+    addition: ordonnance.additionOG,
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-neutral-400">
+            <th className="pb-1 pr-2 font-normal"></th>
+            <th className="pb-1 pr-2 font-normal">Sphère</th>
+            <th className="pb-1 pr-2 font-normal">Cylindre</th>
+            <th className="pb-1 pr-2 font-normal">Axe</th>
+            <th className="pb-1 font-normal">Addition</th>
+          </tr>
+        </thead>
+        <tbody>
+          <LigneMesure libelle="OD (négatif)" mesure={od} />
+          <LigneMesure libelle="OD (positif)" mesure={transposerCylindrePositif(od)} attenue />
+          <LigneMesure libelle="OG (négatif)" mesure={og} />
+          <LigneMesure libelle="OG (positif)" mesure={transposerCylindrePositif(og)} attenue />
+        </tbody>
+      </table>
+      <p className="mt-1 text-[11px] text-neutral-400">
+        Négatif : tel qu&apos;écrit par l&apos;ophtalmologiste. Positif : converti automatiquement pour la fiche verrier.
+      </p>
+    </div>
+  );
+}
+
+function LigneMesure({ libelle, mesure, attenue }: { libelle: string; mesure: MesureOeil; attenue?: boolean }) {
+  return (
+    <tr className={attenue ? "text-neutral-400" : "text-neutral-900"}>
+      <td className="py-0.5 pr-2 font-medium">{libelle}</td>
+      <td className="py-0.5 pr-2">{formaterDioptrie(mesure.sphere)}</td>
+      <td className="py-0.5 pr-2">{formaterDioptrie(mesure.cylindre)}</td>
+      <td className="py-0.5 pr-2">{mesure.axe !== null ? `${mesure.axe}°` : "—"}</td>
+      <td className="py-0.5">{formaterDioptrie(mesure.addition)}</td>
+    </tr>
+  );
+}
+
+function formaterDioptrie(valeur: number | null): string {
+  if (valeur === null) return "—";
+  return `${valeur > 0 ? "+" : ""}${valeur.toFixed(2)}`;
+}
+
+type MesureOeilTexte = { sphere: string; cylindre: string; axe: string; addition: string };
+
+function versTexte(ordonnance: Ordonnance | null, oeil: "OD" | "OG"): MesureOeilTexte {
+  if (!ordonnance) return { sphere: "", cylindre: "", axe: "", addition: "" };
+  if (oeil === "OD") {
+    return {
+      sphere: ordonnance.sphereOD?.toString() ?? "",
+      cylindre: ordonnance.cylindreOD?.toString() ?? "",
+      axe: ordonnance.axeOD?.toString() ?? "",
+      addition: ordonnance.additionOD?.toString() ?? "",
+    };
+  }
+  return {
+    sphere: ordonnance.sphereOG?.toString() ?? "",
+    cylindre: ordonnance.cylindreOG?.toString() ?? "",
+    axe: ordonnance.axeOG?.toString() ?? "",
+    addition: ordonnance.additionOG?.toString() ?? "",
+  };
+}
+
+function versNombre(m: MesureOeilTexte) {
+  return {
+    sphere: m.sphere.trim() ? Number(m.sphere.replace(",", ".")) : null,
+    cylindre: m.cylindre.trim() ? Number(m.cylindre.replace(",", ".")) : null,
+    axe: m.axe.trim() ? Number(m.axe) : null,
+    addition: m.addition.trim() ? Number(m.addition.replace(",", ".")) : null,
+  };
+}
+
+function FormulaireCorrection({
+  dossierId,
+  ordonnance,
+  onEnregistre,
+}: {
+  dossierId: string;
+  ordonnance: Ordonnance | null;
+  onEnregistre: () => void;
+}) {
+  const [od, setOd] = useState<MesureOeilTexte>(versTexte(ordonnance, "OD"));
+  const [og, setOg] = useState<MesureOeilTexte>(versTexte(ordonnance, "OG"));
+  const [emisePar, setEmisePar] = useState(ordonnance?.emisePar ?? "");
+  const [dateEmission, setDateEmission] = useState(
+    ordonnance ? new Date(ordonnance.dateEmission).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+  );
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  async function enregistrer(e: React.FormEvent) {
+    e.preventDefault();
+    setEnvoi(true);
+    setErreur(null);
+    const corps = { dateEmission, emisePar, od: versNombre(od), og: versNombre(og) };
+    const url = ordonnance
+      ? `/api/dossiers/${dossierId}/ordonnances/${ordonnance.id}`
+      : `/api/dossiers/${dossierId}/ordonnances`;
+    const reponse = await fetch(url, {
+      method: ordonnance ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corps),
+    });
+    setEnvoi(false);
+    if (reponse.ok) {
+      onEnregistre();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Erreur.");
+    }
+  }
+
+  return (
+    <form onSubmit={enregistrer} className="mt-3 space-y-3">
+      <p className="text-xs text-neutral-500">
+        Saisir en cylindre négatif (tel qu&apos;écrit par l&apos;ophtalmologiste) — le cylindre positif est calculé
+        automatiquement.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ChampsOeil libelle="OD (œil droit)" valeur={od} onChange={setOd} />
+        <ChampsOeil libelle="OG (œil gauche)" valeur={og} onChange={setOg} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="text-xs">
+          Date de l&apos;ordonnance
+          <input
+            type="date"
+            value={dateEmission}
+            onChange={(e) => setDateEmission(e.target.value)}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </label>
+        <label className="text-xs">
+          Praticien
+          <input
+            value={emisePar}
+            onChange={(e) => setEmisePar(e.target.value)}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </label>
+      </div>
+      {erreur && <p className="text-xs text-red-600">{erreur}</p>}
+      <button
+        type="submit"
+        disabled={envoi}
+        className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+      >
+        {envoi ? "Enregistrement…" : "Enregistrer"}
+      </button>
+    </form>
+  );
+}
+
+function ChampsOeil({
+  libelle,
+  valeur,
+  onChange,
+}: {
+  libelle: string;
+  valeur: MesureOeilTexte;
+  onChange: (v: MesureOeilTexte) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-neutral-200 p-2">
+      <p className="mb-1 text-xs font-semibold text-neutral-600">{libelle}</p>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-xs">
+          Sphère
+          <input
+            value={valeur.sphere}
+            onChange={(e) => onChange({ ...valeur, sphere: e.target.value })}
+            placeholder="+1.25"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          />
+        </label>
+        <label className="text-xs">
+          Cylindre
+          <input
+            value={valeur.cylindre}
+            onChange={(e) => onChange({ ...valeur, cylindre: e.target.value })}
+            placeholder="-0.50"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          />
+        </label>
+        <label className="text-xs">
+          Axe
+          <input
+            value={valeur.axe}
+            onChange={(e) => onChange({ ...valeur, axe: e.target.value })}
+            placeholder="90"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          />
+        </label>
+        <label className="text-xs">
+          Addition
+          <input
+            value={valeur.addition}
+            onChange={(e) => onChange({ ...valeur, addition: e.target.value })}
+            placeholder="+2.00"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm"
+          />
+        </label>
+      </div>
+    </div>
   );
 }
 

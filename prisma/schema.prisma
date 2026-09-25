@@ -186,6 +186,21 @@ model Ordonnance {
   documentId     String?        @unique
   document       Document?      @relation(fields: [documentId], references: [id])
 
+  // Mesures de correction (type OPTIQUE uniquement) — telles que lues sur
+  // l'ordonnance, en cylindre négatif (convention des ophtalmologistes
+  // français). Le cylindre positif utilisé par les verriers/opticiens est
+  // calculé à la volée à l'affichage (lib/optique.ts), jamais stocké en
+  // double pour ne jamais désynchroniser l'un de l'autre.
+  sphereOD      Float?
+  cylindreOD    Float?
+  axeOD         Int?
+  additionOD    Float?
+  sphereOG      Float?
+  cylindreOG    Float?
+  axeOG         Int?
+  additionOG    Float?
+  extraitParOcrA DateTime? // horodatage d'une extraction automatique — null si saisie/corrigée à la main
+
   @@index([personneId])
 }
 

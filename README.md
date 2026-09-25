@@ -117,6 +117,26 @@ Trois rôles, strictement hiérarchisés :
   ne jamais être bloqué si l'un des deux pose problème, et de pouvoir
   retrouver l'accès par l'un si l'autre est perdu.
 
+## Correction du client (carte Fiche) et extraction OCR
+
+La carte **Fiche** d'un dossier affiche la correction optique du client
+(sphère/cylindre/axe/addition par œil), saisie à la main ou extraite
+automatiquement d'un scan d'ordonnance (carte Santé) par IA de vision
+(`src/lib/ocrOrdonnance.ts`) — un OCR classique n'est pas fiable sur de
+l'écriture manuscrite variable. Toujours stockée en cylindre négatif
+(convention des ophtalmologistes français) ; le cylindre positif (convention
+verrier/opticien) est calculé à l'affichage, jamais stocké en double
+(`src/lib/optique.ts`, formule vérifiée auprès de sources professionnelles).
+
+Nécessite `ANTHROPIC_API_KEY` (clé personnelle à créer sur
+[console.anthropic.com](https://console.anthropic.com), `sync: false` dans
+`render.yaml`, jamais commit dans le dépôt) — sans elle, le bouton
+"Extraire de l'ordonnance" échoue proprement avec un message d'erreur
+clair, le reste de l'application n'est pas affecté. La saisie manuelle et
+la correction d'une extraction restent toujours possibles sans cette clé.
+Une valeur extraite est marquée « à vérifier » tant qu'un humain ne l'a
+pas relue/corrigée au moins une fois.
+
 ## Conformité données de santé
 
 **Important, à lire avant toute mise en production** :
