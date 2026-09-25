@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Utilisateur } from "@prisma/client";
 import { FormulaireCreation, LigneUtilisateur, PopupStatutCompte } from "../utilisateurs/UtilisateursClient";
+import { useMonProfil } from "@/lib/monProfil";
+import PopupMonProfil from "@/components/PopupMonProfil";
 
 type UtilisateurSansHash = Omit<Utilisateur, "motDePasseHash">;
 
@@ -27,6 +29,8 @@ export default function SuperAdminClient({
   const router = useRouter();
   const [creation, setCreation] = useState(false);
   const [popup, setPopup] = useState<{ prenom: string; actif: boolean } | null>(null);
+  const { nom: monNom, email: monEmail, profil: monProfil, setNom, setEmail, setProfil } = useMonProfil();
+  const [editionProfil, setEditionProfil] = useState(false);
 
   function actualiser() {
     router.refresh();
@@ -58,9 +62,33 @@ export default function SuperAdminClient({
           </p>
           <p className="mt-2 text-xs text-neutral-500">
             Connecté en tant que <span className="text-amber-300">{sessionEmail}</span>
+            {monNom && (
+              <>
+                {" · "}
+                <button onClick={() => setEditionProfil(true)} className="text-amber-400 underline hover:text-amber-300">
+                  Modifier mon profil
+                </button>
+              </>
+            )}
           </p>
         </div>
       </div>
+
+      {editionProfil && monNom && (
+        <PopupMonProfil
+          nom={monNom}
+          email={monEmail}
+          profil={monProfil}
+          onFermer={() => setEditionProfil(false)}
+          onEnregistre={(nouveauNom, nouvelEmail, nouveauProfil) => {
+            setNom(nouveauNom);
+            setEmail(nouvelEmail);
+            setProfil(nouveauProfil);
+            setEditionProfil(false);
+            actualiser();
+          }}
+        />
+      )}
 
       <div className="mx-auto mt-10 w-full max-w-3xl px-6">
         <button
