@@ -49,8 +49,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   // (critère d'acceptation V1 du module) — jamais de demande "perdue" faute
   // de création manuelle.
   if (decision === "ACCEPTEE") {
+    // FINESS/RPPS du prescripteur — une mutuelle les exige sur toute demande
+    // de prise en charge ; copiés depuis la dernière ordonnance optique du
+    // dossier au moment de la création (instantané, jamais recalculé après).
+    const derniereOrdonnance = await prisma.ordonnance.findFirst({
+      where: { personneId: proposition.personneId, type: "OPTIQUE" },
+      orderBy: { dateEmission: "desc" },
+      select: { finess: true, rpps: true },
+    });
+
     const demande = await prisma.demandePriseEnCharge.create({
-      data: { propositionId: id, personneId: proposition.personneId },
+      data: {
+        propositionId: id,
+        personneId: proposition.personneId,
+        finess: derniereOrdonnance?.finess ?? null,
+        rpps: derniereOrdonnance?.rpps ?? null,
+      },
     });
     await journaliser({
       type: "demande-mutuelle.creee",

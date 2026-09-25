@@ -137,6 +137,27 @@ la correction d'une extraction restent toujours possibles sans cette clé.
 Une valeur extraite est marquée « à vérifier » tant qu'un humain ne l'a
 pas relue/corrigée au moins une fois.
 
+L'OCR extrait aussi le cabinet, son numéro **FINESS** (9 chiffres — seul
+numéro obligatoire pour qu'un cabinet entre dans l'annuaire) et le numéro
+**RPPS** du praticien (11 chiffres, si présent sur l'ordonnance) — formats
+vérifiés auprès de sources officielles. Un annuaire (`model Cabinet`,
+`src/lib/cabinets.ts`) se construit au fur et à mesure des ordonnances
+créées/corrigées (OCR ou saisie manuelle), et sert à l'autocomplétion
+(`GET /api/cabinets?q=...`) en cas d'OCR défaillant ou de création
+manuelle du dossier — plutôt que de tout retaper à chaque fois.
+
+Un opticien peut adapter une prescription existante dans certaines limites
+(décret du 27 mai 2016) : la carte Fiche permet de saisir cette adaptation
+(ses propres mesures OD/OG, sa date, l'opticien) séparément de la
+prescription du médecin — tant qu'elle existe, ce sont ses valeurs qui font
+foi partout dans le logiciel (`lib/optique.ts` > `valeursActives`), la
+prescription d'origine restant toujours consultable, jamais écrasée.
+
+Le FINESS et le RPPS du prescripteur sont recopiés (instantané, jamais
+recalculé) sur la demande de prise en charge dès qu'une proposition est
+acceptée (carte Mutuelle & tiers payant) — une mutuelle les exige sur
+toute demande de prise en charge.
+
 ## Conformité données de santé
 
 **Important, à lire avant toute mise en production** :

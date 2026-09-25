@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
-import { parserMesureOeil } from "@/lib/optique";
+import { parserMesureOeil, validerFiness, validerRpps } from "@/lib/optique";
+import { enregistrerCabinetSiValide } from "@/lib/cabinets";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -20,8 +21,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const dateEmission = typeof body.dateEmission === "string" && body.dateEmission ? new Date(body.dateEmission) : new Date();
   const emisePar = typeof body.emisePar === "string" && body.emisePar.trim() ? body.emisePar.trim() : null;
+  const cabinetNom = typeof body.cabinetNom === "string" && body.cabinetNom.trim() ? body.cabinetNom.trim() : null;
+  const finess = validerFiness(body.finess);
+  const rpps = validerRpps(body.rpps);
   const od = parserMesureOeil(body.od);
   const og = parserMesureOeil(body.og);
+
+  const modification = body.modification ?? {};
+  const dateModification =
+    typeof modification.dateModification === "string" && modification.dateModification
+      ? new Date(modification.dateModification)
+      : null;
+  const modifieePar =
+    typeof modification.modifieePar === "string" && modification.modifieePar.trim() ? modification.modifieePar.trim() : null;
+  const odModifiee = dateModification ? parserMesureOeil(modification.od) : { sphere: null, cylindre: null, axe: null, addition: null };
+  const ogModifiee = dateModification ? parserMesureOeil(modification.og) : { sphere: null, cylindre: null, axe: null, addition: null };
 
   const ordonnance = await prisma.ordonnance.create({
     data: {
@@ -29,6 +43,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       type: "OPTIQUE",
       dateEmission,
       emisePar,
+      cabinetNom,
+      finess,
+      rpps,
       sphereOD: od.sphere,
       cylindreOD: od.cylindre,
       axeOD: od.axe,
@@ -37,8 +54,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       cylindreOG: og.cylindre,
       axeOG: og.axe,
       additionOG: og.addition,
+      dateModification,
+      modifieePar,
+      sphereOdModifiee: odModifiee.sphere,
+      cylindreOdModifiee: odModifiee.cylindre,
+      axeOdModifiee: odModifiee.axe,
+      additionOdModifiee: odModifiee.addition,
+      sphereOgModifiee: ogModifiee.sphere,
+      cylindreOgModifiee: ogModifiee.cylindre,
+      axeOgModifiee: ogModifiee.axe,
+      additionOgModifiee: ogModifiee.addition,
     },
   });
+
+  await enregistrerCabinetSiValide(cabinetNom, finess);
 
   await journaliser({
     type: "ordonnance.creee",

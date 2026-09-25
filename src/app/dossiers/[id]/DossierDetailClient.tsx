@@ -24,7 +24,7 @@ import type { PieceRequise } from "@/lib/completude";
 import { formaterPrix, parserPrixEnCentimes } from "@/lib/argent";
 import { garantieExpiree } from "@/lib/sav";
 import { useModeDemo } from "@/lib/modeDemo";
-import { transposerCylindrePositif, type MesureOeil } from "@/lib/optique";
+import { transposerCylindrePositif, valeursActives, type MesureOeil } from "@/lib/optique";
 import Carrousel from "@/components/Carrousel";
 import CaptureCamera from "@/components/CaptureCamera";
 
@@ -666,21 +666,40 @@ function CorrectionClient({
 }
 
 function TableauCorrection({ ordonnance }: { ordonnance: Ordonnance }) {
-  const od: MesureOeil = {
+  const odOrigine: MesureOeil = {
     sphere: ordonnance.sphereOD,
     cylindre: ordonnance.cylindreOD,
     axe: ordonnance.axeOD,
     addition: ordonnance.additionOD,
   };
-  const og: MesureOeil = {
+  const ogOrigine: MesureOeil = {
     sphere: ordonnance.sphereOG,
     cylindre: ordonnance.cylindreOG,
     axe: ordonnance.axeOG,
     addition: ordonnance.additionOG,
   };
+  const { od, og, source } = valeursActives(ordonnance);
 
   return (
     <div className="overflow-x-auto">
+      {(ordonnance.cabinetNom || ordonnance.finess || ordonnance.rpps) && (
+        <p className="mb-2 text-xs text-neutral-600">
+          {ordonnance.cabinetNom && <span className="font-medium">{ordonnance.cabinetNom}</span>}
+          {ordonnance.finess && <span> · FINESS {ordonnance.finess}</span>}
+          {ordonnance.rpps && <span> · RPPS {ordonnance.rpps}</span>}
+        </p>
+      )}
+      {ordonnance.cabinetNom && !ordonnance.finess && (
+        <p className="mb-2 text-xs text-amber-700">⚠️ FINESS manquant — obligatoire pour identifier le cabinet.</p>
+      )}
+
+      {source === "opticien" && (
+        <p className="mb-2 rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">
+          👓 Valeurs actives : adaptées par {ordonnance.modifieePar ?? "un opticien"} le{" "}
+          {ordonnance.dateModification && new Date(ordonnance.dateModification).toLocaleDateString("fr-FR")}
+        </p>
+      )}
+
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-neutral-400">
@@ -701,6 +720,18 @@ function TableauCorrection({ ordonnance }: { ordonnance: Ordonnance }) {
       <p className="mt-1 text-[11px] text-neutral-400">
         Négatif : tel qu&apos;écrit par l&apos;ophtalmologiste. Positif : converti automatiquement pour la fiche verrier.
       </p>
+
+      {source === "opticien" && (
+        <details className="mt-3 text-xs text-neutral-500">
+          <summary className="cursor-pointer select-none">Prescription d&apos;origine (médecin), non appliquée</summary>
+          <table className="mt-2 w-full text-sm">
+            <tbody>
+              <LigneMesure libelle="OD (négatif)" mesure={odOrigine} attenue />
+              <LigneMesure libelle="OG (négatif)" mesure={ogOrigine} attenue />
+            </tbody>
+          </table>
+        </details>
+      )}
     </div>
   );
 }
@@ -751,6 +782,24 @@ function versNombre(m: MesureOeilTexte) {
   };
 }
 
+function versTexteModifiee(ordonnance: Ordonnance | null, oeil: "OD" | "OG"): MesureOeilTexte {
+  if (!ordonnance) return { sphere: "", cylindre: "", axe: "", addition: "" };
+  if (oeil === "OD") {
+    return {
+      sphere: ordonnance.sphereOdModifiee?.toString() ?? "",
+      cylindre: ordonnance.cylindreOdModifiee?.toString() ?? "",
+      axe: ordonnance.axeOdModifiee?.toString() ?? "",
+      addition: ordonnance.additionOdModifiee?.toString() ?? "",
+    };
+  }
+  return {
+    sphere: ordonnance.sphereOgModifiee?.toString() ?? "",
+    cylindre: ordonnance.cylindreOgModifiee?.toString() ?? "",
+    axe: ordonnance.axeOgModifiee?.toString() ?? "",
+    addition: ordonnance.additionOgModifiee?.toString() ?? "",
+  };
+}
+
 function FormulaireCorrection({
   dossierId,
   ordonnance,
@@ -763,17 +812,64 @@ function FormulaireCorrection({
   const [od, setOd] = useState<MesureOeilTexte>(versTexte(ordonnance, "OD"));
   const [og, setOg] = useState<MesureOeilTexte>(versTexte(ordonnance, "OG"));
   const [emisePar, setEmisePar] = useState(ordonnance?.emisePar ?? "");
+  const [cabinetNom, setCabinetNom] = useState(ordonnance?.cabinetNom ?? "");
+  const [finess, setFiness] = useState(ordonnance?.finess ?? "");
+  const [rpps, setRpps] = useState(ordonnance?.rpps ?? "");
+  const [suggestionsCabinets, setSuggestionsCabinets] = useState<{ id: string; nom: string; finess: string }[]>([]);
   const [dateEmission, setDateEmission] = useState(
     ordonnance ? new Date(ordonnance.dateEmission).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+  );
+  const [adaptationOpticien, setAdaptationOpticien] = useState(Boolean(ordonnance?.dateModification));
+  const [odModifiee, setOdModifiee] = useState<MesureOeilTexte>(versTexteModifiee(ordonnance, "OD"));
+  const [ogModifiee, setOgModifiee] = useState<MesureOeilTexte>(versTexteModifiee(ordonnance, "OG"));
+  const [modifieePar, setModifieePar] = useState(ordonnance?.modifieePar ?? "");
+  const [dateModification, setDateModification] = useState(
+    ordonnance?.dateModification ? new Date(ordonnance.dateModification).toISOString().slice(0, 10) : "",
   );
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
+  useEffect(() => {
+    const q = cabinetNom.trim();
+    if (q.length < 2) {
+      setSuggestionsCabinets([]);
+      return;
+    }
+    const minuteur = setTimeout(() => {
+      fetch(`/api/cabinets?q=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then(setSuggestionsCabinets)
+        .catch(() => {});
+    }, 200);
+    return () => clearTimeout(minuteur);
+  }, [cabinetNom]);
+
+  function surChangementCabinetNom(valeur: string) {
+    setCabinetNom(valeur);
+    const correspondance = suggestionsCabinets.find((c) => c.nom === valeur);
+    if (correspondance) setFiness(correspondance.finess);
+  }
+
   async function enregistrer(e: React.FormEvent) {
     e.preventDefault();
+    if (adaptationOpticien && !dateModification) {
+      setErreur("La date de l'adaptation est requise si vous renseignez une correction opticien.");
+      return;
+    }
     setEnvoi(true);
     setErreur(null);
-    const corps = { dateEmission, emisePar, od: versNombre(od), og: versNombre(og) };
+    const corps = {
+      dateEmission,
+      emisePar,
+      cabinetNom,
+      finess,
+      rpps,
+      od: versNombre(od),
+      og: versNombre(og),
+      modification: adaptationOpticien
+        ? { dateModification, modifieePar, od: versNombre(odModifiee), og: versNombre(ogModifiee) }
+        : { dateModification: "", modifieePar: "", od: {}, og: {} },
+    };
     const url = ordonnance
       ? `/api/dossiers/${dossierId}/ordonnances/${ordonnance.id}`
       : `/api/dossiers/${dossierId}/ordonnances`;
@@ -820,6 +916,83 @@ function FormulaireCorrection({
           />
         </label>
       </div>
+      <div className="grid grid-cols-3 gap-3">
+        <label className="text-xs">
+          Cabinet
+          <input
+            list="suggestions-cabinets"
+            value={cabinetNom}
+            onChange={(e) => surChangementCabinetNom(e.target.value)}
+            placeholder="Nom du cabinet"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+          <datalist id="suggestions-cabinets">
+            {suggestionsCabinets.map((c) => (
+              <option key={c.id} value={c.nom} />
+            ))}
+          </datalist>
+        </label>
+        <label className="text-xs">
+          FINESS (obligatoire, 9 chiffres)
+          <input
+            value={finess}
+            onChange={(e) => setFiness(e.target.value)}
+            placeholder="123456789"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </label>
+        <label className="text-xs">
+          RPPS (si présent, 11 chiffres)
+          <input
+            value={rpps}
+            onChange={(e) => setRpps(e.target.value)}
+            placeholder="12345678901"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </label>
+      </div>
+      <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+        <label className="flex items-center gap-2 text-xs font-medium text-indigo-700">
+          <input
+            type="checkbox"
+            checked={adaptationOpticien}
+            onChange={(e) => setAdaptationOpticien(e.target.checked)}
+          />
+          👓 Adaptation de la correction par un opticien
+        </label>
+        {adaptationOpticien && (
+          <div className="mt-2 space-y-3">
+            <p className="text-xs text-neutral-500">
+              Ces valeurs remplacent celles du médecin dans tout le logiciel tant qu&apos;elles sont renseignées — la
+              prescription d&apos;origine reste consultable.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <ChampsOeil libelle="OD adaptée (œil droit)" valeur={odModifiee} onChange={setOdModifiee} />
+              <ChampsOeil libelle="OG adaptée (œil gauche)" valeur={ogModifiee} onChange={setOgModifiee} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs">
+                Date de l&apos;adaptation
+                <input
+                  type="date"
+                  value={dateModification}
+                  onChange={(e) => setDateModification(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="text-xs">
+                Opticien
+                <input
+                  value={modifieePar}
+                  onChange={(e) => setModifieePar(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+                />
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+
       {erreur && <p className="text-xs text-red-600">{erreur}</p>}
       <button
         type="submit"
@@ -1119,6 +1292,19 @@ function DemandeLigne({
           {LIBELLE_STATUT_DEMANDE[demande.statut]}
         </span>
       </div>
+
+      {(demande.finess || demande.rpps) && (
+        <p className="mt-1 text-xs text-neutral-500">
+          Prescripteur — {demande.finess && <>FINESS {demande.finess}</>}
+          {demande.finess && demande.rpps && " · "}
+          {demande.rpps && <>RPPS {demande.rpps}</>}
+        </p>
+      )}
+      {!demande.finess && (
+        <p className="mt-1 text-xs text-amber-700">
+          ⚠️ FINESS du prescripteur manquant — à compléter sur l&apos;ordonnance (carte Fiche) avant l&apos;envoi.
+        </p>
+      )}
 
       {demande.statut === "A_ENVOYER" && (
         <button

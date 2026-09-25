@@ -4,6 +4,7 @@ import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
 import { lireFichier } from "@/lib/stockageFichiers";
 import { extraireMesuresOrdonnance } from "@/lib/ocrOrdonnance";
+import { enregistrerCabinetSiValide } from "@/lib/cabinets";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -47,6 +48,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const donneesCommunes = {
     dateEmission: resultat.dateEmission ? new Date(resultat.dateEmission) : new Date(),
     emisePar: resultat.emisePar,
+    cabinetNom: resultat.cabinetNom,
+    finess: resultat.finess,
+    rpps: resultat.rpps,
     sphereOD: resultat.od.sphere,
     cylindreOD: resultat.od.cylindre,
     axeOD: resultat.od.axe,
@@ -63,6 +67,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     update: donneesCommunes,
     create: { personneId: id, type: "OPTIQUE", documentId, ...donneesCommunes },
   });
+
+  await enregistrerCabinetSiValide(resultat.cabinetNom, resultat.finess);
 
   await journaliser({
     type: "ordonnance.extraite_ocr",

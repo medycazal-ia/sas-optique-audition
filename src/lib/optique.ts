@@ -70,3 +70,67 @@ export function parserMesureOeil(source: unknown): MesureOeil {
     addition: bornerNombre(m.addition, BORNES_MESURE.addition),
   };
 }
+
+/**
+ * Le FINESS (établissement de santé) et le RPPS (praticien) sont chacun
+ * une suite de chiffres exacte — 9 pour le FINESS, 11 pour le RPPS, sans
+ * lettre ni séparateur (vérifié auprès de sources officielles, voir PR).
+ * Tolère les espaces éventuels d'une saisie/OCR ("123 456 789") avant de
+ * vérifier la longueur ; toute valeur qui n'a pas exactement le bon
+ * nombre de chiffres devient null plutôt qu'être stockée telle quelle.
+ */
+function validerNumeroChiffres(valeur: unknown, longueur: number): string | null {
+  if (typeof valeur !== "string") return null;
+  const chiffres = valeur.replace(/\s+/g, "");
+  return /^\d+$/.test(chiffres) && chiffres.length === longueur ? chiffres : null;
+}
+
+export function validerFiness(valeur: unknown): string | null {
+  return validerNumeroChiffres(valeur, 9);
+}
+
+export function validerRpps(valeur: unknown): string | null {
+  return validerNumeroChiffres(valeur, 11);
+}
+
+export type OrdonnanceMesures = {
+  sphereOD: number | null;
+  cylindreOD: number | null;
+  axeOD: number | null;
+  additionOD: number | null;
+  sphereOG: number | null;
+  cylindreOG: number | null;
+  axeOG: number | null;
+  additionOG: number | null;
+  sphereOdModifiee: number | null;
+  cylindreOdModifiee: number | null;
+  axeOdModifiee: number | null;
+  additionOdModifiee: number | null;
+  sphereOgModifiee: number | null;
+  cylindreOgModifiee: number | null;
+  axeOgModifiee: number | null;
+  additionOgModifiee: number | null;
+  dateModification: Date | string | null;
+};
+
+/**
+ * Un opticien peut adapter une prescription existante dans certaines
+ * limites (décret du 27 mai 2016) — tant qu'une adaptation existe
+ * (`dateModification` renseignée), ce sont SES valeurs qui font foi dans
+ * tout le logiciel, jamais celles du médecin en même temps : pas de fusion
+ * champ par champ, un jeu de mesures complet remplace l'autre.
+ */
+export function valeursActives(o: OrdonnanceMesures): { od: MesureOeil; og: MesureOeil; source: "opticien" | "medecin" } {
+  if (o.dateModification) {
+    return {
+      od: { sphere: o.sphereOdModifiee, cylindre: o.cylindreOdModifiee, axe: o.axeOdModifiee, addition: o.additionOdModifiee },
+      og: { sphere: o.sphereOgModifiee, cylindre: o.cylindreOgModifiee, axe: o.axeOgModifiee, addition: o.additionOgModifiee },
+      source: "opticien",
+    };
+  }
+  return {
+    od: { sphere: o.sphereOD, cylindre: o.cylindreOD, axe: o.axeOD, addition: o.additionOD },
+    og: { sphere: o.sphereOG, cylindre: o.cylindreOG, axe: o.axeOG, addition: o.additionOG },
+    source: "medecin",
+  };
+}
