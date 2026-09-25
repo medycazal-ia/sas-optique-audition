@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { CLE_AUTOFILL_CONNEXION } from "@/lib/identifiantsDemo";
 
 export default function ConnexionPage() {
   return (
@@ -20,6 +21,7 @@ function ConnexionFormulaire() {
   const [erreur, setErreur] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const [amorceRequise, setAmorceRequise] = useState(false);
+  const [preremplissageDemo, setPreremplissageDemo] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/moi")
@@ -28,6 +30,26 @@ function ConnexionFormulaire() {
         if (data.amorceRequise) setAmorceRequise(true);
       })
       .catch(() => {});
+  }, []);
+
+  // Préremplissage démo en un clic depuis la bascule "mode démo" du hub —
+  // jamais via l'URL, uniquement via un sessionStorage hérité d'un onglet
+  // déjà authentifié en directeur (voir BarreModeDemo + identifiantsDemo.ts).
+  // Retiré aussitôt lu : usage unique, jamais laissé traîner dans cet onglet.
+  useEffect(() => {
+    try {
+      const brut = window.sessionStorage.getItem(CLE_AUTOFILL_CONNEXION);
+      if (!brut) return;
+      window.sessionStorage.removeItem(CLE_AUTOFILL_CONNEXION);
+      const { email: emailDemo, motDePasse: motDePasseDemo } = JSON.parse(brut);
+      if (typeof emailDemo === "string" && typeof motDePasseDemo === "string") {
+        setEmail(emailDemo);
+        setMotDePasse(motDePasseDemo);
+        setPreremplissageDemo(true);
+      }
+    } catch {
+      // sessionStorage indisponible ou contenu invalide — formulaire vide, sans casser la page.
+    }
   }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -56,6 +78,12 @@ function ConnexionFormulaire() {
         <h1 className="mt-2 text-2xl font-extrabold text-neutral-900">Connexion</h1>
         <p className="mt-1 text-sm text-neutral-500">Accès réservé à l&apos;équipe.</p>
       </div>
+
+      {preremplissageDemo && (
+        <div className="mb-4 rounded-xl border border-fuchsia-300 bg-fuchsia-50 p-3 text-sm text-fuchsia-800">
+          🎬 Identifiants du compte démo préremplis — vérifiez puis connectez-vous.
+        </div>
+      )}
 
       {amorceRequise && (
         <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">

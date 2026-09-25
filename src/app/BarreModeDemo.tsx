@@ -3,7 +3,7 @@
 import Link from "next/link";
 import BarreUtilisateur from "@/components/BarreUtilisateur";
 import { useModeDemo, type VueDemo } from "@/lib/modeDemo";
-import { IDENTIFIANTS_DEMO } from "@/lib/identifiantsDemo";
+import { IDENTIFIANTS_DEMO, CLE_AUTOFILL_CONNEXION } from "@/lib/identifiantsDemo";
 
 /**
  * Barre du hub : identité + liens directs Utilisateurs/Super Admin +
@@ -24,6 +24,21 @@ export default function BarreModeDemo({
   );
 
   if (!estDirecteurReel && !estSuperAdminReel) return null;
+
+  function ouvrirConnexionDemo() {
+    if (vue === "reel") return;
+    try {
+      window.sessionStorage.setItem(CLE_AUTOFILL_CONNEXION, JSON.stringify(IDENTIFIANTS_DEMO[vue]));
+    } catch {
+      // sessionStorage indisponible (navigation privée stricte, etc.) — le
+      // nouvel onglet retombera simplement sur le formulaire vide.
+    }
+    // Volontairement sans "noopener" : c'est justement ce lien d'ouverture
+    // qui permet au nouvel onglet d'hériter une copie du sessionStorage de
+    // celui-ci (même origine, /connexion) pour préremplir le formulaire —
+    // voir CLE_AUTOFILL_CONNEXION dans lib/identifiantsDemo.ts.
+    window.open("/connexion", "_blank");
+  }
 
   const options: { valeur: VueDemo; libelle: string }[] = [
     { valeur: "reel", libelle: estSuperAdminReel ? "Vue réelle (Super Admin)" : "Vue réelle (Directeur)" },
@@ -75,16 +90,23 @@ export default function BarreModeDemo({
           </div>
 
           {vue !== "reel" && (
-            <p className="text-[11px] text-fuchsia-700">
-              Pour se connecter pour de vrai avec ce rôle (autre onglet) :{" "}
-              <span className="font-mono font-semibold">{IDENTIFIANTS_DEMO[vue].email}</span> /{" "}
-              <span className="font-mono font-semibold">{IDENTIFIANTS_DEMO[vue].motDePasse}</span>
-              {" — "}
-              <Link href="/utilisateurs" className="underline hover:text-fuchsia-900">
-                à créer d&apos;abord si besoin
-              </Link>
-              .
-            </p>
+            <div className="flex flex-col items-center gap-1.5">
+              <button
+                onClick={ouvrirConnexionDemo}
+                className="rounded-full bg-fuchsia-600 px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm transition hover:scale-105 hover:bg-fuchsia-700"
+              >
+                🚀 Se connecter en {vue === "directeur" ? "Directeur" : "Collaborateur"} démo (nouvel onglet, prérempli)
+              </button>
+              <p className="text-[11px] text-fuchsia-700">
+                Identifiants : <span className="font-mono font-semibold">{IDENTIFIANTS_DEMO[vue].email}</span> /{" "}
+                <span className="font-mono font-semibold">{IDENTIFIANTS_DEMO[vue].motDePasse}</span>
+                {" — "}
+                <Link href="/utilisateurs" className="underline hover:text-fuchsia-900">
+                  à créer d&apos;abord si besoin
+                </Link>
+                .
+              </p>
+            </div>
           )}
         </div>
       )}
