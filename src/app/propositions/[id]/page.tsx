@@ -26,9 +26,15 @@ export default async function PropositionPage({ params }: { params: Promise<{ id
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
       <div className="flex items-center justify-between">
-        <Link href={`/dossiers/${proposition.personne.id}`} className="text-sm text-neutral-500 hover:underline">
-          ← Retour au dossier de {proposition.personne.prenom} {proposition.personne.nom}
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href={`/dossiers/${proposition.personne.id}`} className="text-sm text-neutral-500 hover:underline">
+            ← Retour au dossier de {proposition.personne.prenom} {proposition.personne.nom}
+          </Link>
+          <span className="text-neutral-300">·</span>
+          <Link href="/" className="text-sm text-neutral-500 hover:underline">
+            Accueil
+          </Link>
+        </div>
         <BarreUtilisateur />
       </div>
 

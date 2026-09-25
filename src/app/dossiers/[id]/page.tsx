@@ -85,9 +85,15 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
     <main className="flex-1 py-12">
       <div className="mx-auto w-full max-w-3xl px-6">
         <div className="flex items-center justify-between">
-          <Link href="/dossiers" className="text-sm text-neutral-500 hover:underline">
-            ← Retour aux dossiers
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href="/dossiers" className="text-sm text-neutral-500 hover:underline">
+              ← Retour aux dossiers
+            </Link>
+            <span className="text-neutral-300">·</span>
+            <Link href="/" className="text-sm text-neutral-500 hover:underline">
+              Accueil
+            </Link>
+          </div>
           <BarreUtilisateur />
         </div>
 

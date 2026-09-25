@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { lireSession, sessionEstDirecteurOuPlus } from "@/lib/auth";
 import { listerUtilisateurs } from "@/lib/utilisateurs";
 import BarreUtilisateur from "@/components/BarreUtilisateur";
@@ -16,7 +17,10 @@ export default async function UtilisateursPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <Link href="/" className="text-sm text-neutral-500 hover:underline">
+          ← Accueil
+        </Link>
         <BarreUtilisateur />
       </div>
       <div className="mt-2">
