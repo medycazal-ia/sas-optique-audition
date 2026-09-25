@@ -343,6 +343,20 @@ function Completude({
     router.refresh();
   }
 
+  async function marquerNonFournie(type: PieceRequise["type"], libelle: string) {
+    if (!window.confirm(`Marquer « ${libelle} » comme non fournie ? Le scan éventuellement associé sera supprimé.`)) {
+      return;
+    }
+    setEnCours(type);
+    await fetch(`/api/dossiers/${dossierId}/documents`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type }),
+    });
+    setEnCours(null);
+    router.refresh();
+  }
+
   return (
     <Carte
       id={ID_CARTE_COMPLETUDE}
@@ -358,16 +372,41 @@ function Completude({
             <li key={piece.type} className="flex items-center justify-between gap-2 py-2">
               <span className="text-sm text-neutral-800">{piece.libelle}</span>
               {piece.obtenue ? (
-                document ? (
-                  <a
-                    href={`/api/dossiers/${dossierId}/documents/${document.id}/telecharger`}
-                    className="text-sm font-medium text-emerald-600 hover:underline"
+                <div className="flex items-center gap-2">
+                  {document ? (
+                    <>
+                      <a
+                        href={`/api/dossiers/${dossierId}/documents/${document.id}/telecharger`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-emerald-600 hover:underline"
+                      >
+                        ✓ {document.cheminStockage.startsWith("verifie-sans-scan/") ? "Vérifiée (pas de scan)" : "Voir le scan"}
+                      </a>
+                      {!document.cheminStockage.startsWith("verifie-sans-scan/") && (
+                        <a
+                          href={`/api/dossiers/${dossierId}/documents/${document.id}/telecharger`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Ouvre le scan dans un nouvel onglet pour l'imprimer depuis le lecteur du navigateur"
+                          className="text-xs text-neutral-400 hover:text-neutral-600 hover:underline"
+                        >
+                          🖨️ Imprimer
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-sm font-medium text-emerald-600">✓ Obtenue</span>
+                  )}
+                  <button
+                    onClick={() => marquerNonFournie(piece.type, piece.libelle)}
+                    disabled={enCours === piece.type}
+                    title="Marquer non fournie"
+                    className="text-xs text-neutral-400 hover:text-red-600 disabled:opacity-50"
                   >
-                    ✓ {document.cheminStockage.startsWith("verifie-sans-scan/") ? "Vérifiée (pas de scan)" : "Voir le scan"}
-                  </a>
-                ) : (
-                  <span className="text-sm font-medium text-emerald-600">✓ Obtenue</span>
-                )
+                    {enCours === piece.type ? "…" : "✕"}
+                  </button>
+                </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <input

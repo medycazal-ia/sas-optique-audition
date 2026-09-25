@@ -1,6 +1,7 @@
+import type { TypeDocument } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hacherMotDePasse } from "@/lib/auth";
-import { supprimerFichiersPersonne } from "@/lib/stockageFichiers";
+import { enregistrerFichier, supprimerFichiersPersonne } from "@/lib/stockageFichiers";
 import { IDENTIFIANTS_DEMO } from "@/lib/identifiantsDemo";
 
 export { IDENTIFIANTS_DEMO, estCompteDemo } from "@/lib/identifiantsDemo";
@@ -19,10 +20,47 @@ export { IDENTIFIANTS_DEMO, estCompteDemo } from "@/lib/identifiantsDemo";
  * justement parce que ce ne sont jamais de vraies données client.
  */
 
-const DOSSIERS_DEMO = [
-  { prenom: "Sophie", nom: "Lambert", telephone: "0601020304" },
-  { prenom: "Marc", nom: "Dubois", telephone: "0605060708" },
+type DocumentDemo = { type: TypeDocument; avecScanFictif: boolean };
+
+/**
+ * Un dossier démo entièrement vierge ne montre pas grand-chose de la carte
+ * Santé pendant une présentation — chacun a donc quelques pièces déjà
+ * fournies (dont un vrai scan fictif pour Sophie, pour montrer aussi le
+ * lien "Voir le scan"/"Imprimer"), et au moins une pièce volontairement
+ * manquante pour montrer aussi ce cas-là.
+ */
+const DOSSIERS_DEMO: { prenom: string; nom: string; telephone: string; documents: DocumentDemo[] }[] = [
+  {
+    prenom: "Sophie",
+    nom: "Lambert",
+    telephone: "0601020304",
+    documents: [
+      { type: "CARTE_VITALE", avecScanFictif: true },
+      { type: "ORDONNANCE", avecScanFictif: false },
+    ],
+  },
+  {
+    prenom: "Marc",
+    nom: "Dubois",
+    telephone: "0605060708",
+    documents: [{ type: "CARTE_MUTUELLE", avecScanFictif: false }],
+  },
 ];
+
+async function creerDocumentDemo(personneId: string, prenom: string, nom: string, doc: DocumentDemo) {
+  const nomFichier = `${doc.type.toLowerCase()}-demo.${doc.avecScanFictif ? "txt" : "pdf"}`;
+  const cheminStockage = doc.avecScanFictif
+    ? (
+        await enregistrerFichier(
+          personneId,
+          nomFichier,
+          Buffer.from(`Document fictif (mode démo) — ${doc.type} de ${prenom} ${nom}.`, "utf-8"),
+        )
+      ).cheminStockage
+    : `verifie-sans-scan/${personneId}/${nomFichier}`;
+
+  await prisma.document.create({ data: { personneId, type: doc.type, nomFichier, cheminStockage } });
+}
 
 export async function amorcerDonneesDemo() {
   const directeurHash = await hacherMotDePasse(IDENTIFIANTS_DEMO.directeur.motDePasse);
@@ -57,8 +95,13 @@ export async function amorcerDonneesDemo() {
   for (const d of DOSSIERS_DEMO) {
     const existant = await prisma.personne.findFirst({ where: { prenom: d.prenom, nom: d.nom } });
     if (!existant) {
-      await prisma.personne.create({ data: { ...d, estDemo: true } });
+      const personne = await prisma.personne.create({
+        data: { prenom: d.prenom, nom: d.nom, telephone: d.telephone, estDemo: true },
+      });
       dossiersCrees.push(`${d.prenom} ${d.nom}`);
+      for (const doc of d.documents) {
+        await creerDocumentDemo(personne.id, d.prenom, d.nom, doc);
+      }
     }
   }
 
