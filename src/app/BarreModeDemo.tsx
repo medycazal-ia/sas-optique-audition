@@ -3,6 +3,7 @@
 import Link from "next/link";
 import BarreUtilisateur from "@/components/BarreUtilisateur";
 import { useModeDemo, type VueDemo } from "@/lib/modeDemo";
+import { IDENTIFIANTS_DEMO } from "@/lib/identifiantsDemo";
 
 /**
  * Barre du hub : identité + liens directs Utilisateurs/Super Admin +
@@ -53,23 +54,38 @@ export default function BarreModeDemo({
       </div>
 
       {options.length > 1 && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col items-center gap-2">
+          <div className="flex items-center gap-2">
+            {vue !== "reel" && (
+              <span className="rounded-full bg-fuchsia-100 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-700">
+                🎬 Mode démo actif
+              </span>
+            )}
+            <select
+              value={vue}
+              onChange={(e) => definirVue(e.target.value as VueDemo)}
+              className="rounded-full border border-neutral-300 bg-white px-3 py-1 text-xs text-neutral-600"
+            >
+              {options.map((o) => (
+                <option key={o.valeur} value={o.valeur}>
+                  {o.libelle}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {vue !== "reel" && (
-            <span className="rounded-full bg-fuchsia-100 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-700">
-              🎬 Mode démo actif
-            </span>
+            <p className="text-[11px] text-fuchsia-700">
+              Pour se connecter pour de vrai avec ce rôle (autre onglet) :{" "}
+              <span className="font-mono font-semibold">{IDENTIFIANTS_DEMO[vue].email}</span> /{" "}
+              <span className="font-mono font-semibold">{IDENTIFIANTS_DEMO[vue].motDePasse}</span>
+              {" — "}
+              <Link href="/utilisateurs" className="underline hover:text-fuchsia-900">
+                à créer d&apos;abord si besoin
+              </Link>
+              .
+            </p>
           )}
-          <select
-            value={vue}
-            onChange={(e) => definirVue(e.target.value as VueDemo)}
-            className="rounded-full border border-neutral-300 bg-white px-3 py-1 text-xs text-neutral-600"
-          >
-            {options.map((o) => (
-              <option key={o.valeur} value={o.valeur}>
-                {o.libelle}
-              </option>
-            ))}
-          </select>
         </div>
       )}
     </div>
