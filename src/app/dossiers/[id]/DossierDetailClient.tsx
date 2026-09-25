@@ -433,7 +433,7 @@ function Propositions({ dossierId, propositions }: { dossierId: string; proposit
   return (
     <Carte
       id={ID_CARTE_PROPOSITIONS}
-      titre="Propositions"
+      titre="Fiche"
       sousTitre="Chaque version reste consultable, même refusée ou remplacée."
       emoji="📝"
       degrade="from-sky-400 to-blue-500"
