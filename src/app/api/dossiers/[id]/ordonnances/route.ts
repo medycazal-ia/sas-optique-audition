@@ -24,6 +24,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const cabinetNom = typeof body.cabinetNom === "string" && body.cabinetNom.trim() ? body.cabinetNom.trim() : null;
   const finess = validerFiness(body.finess);
   const rpps = validerRpps(body.rpps);
+
+  // FINESS obligatoire sur une saisie manuelle (l'extraction OCR, elle,
+  // enregistre ce qu'elle trouve même incomplet — voir ordonnances/extraire)
+  // : une mutuelle l'exige sur toute demande de prise en charge ultérieure.
+  if (!finess) {
+    return NextResponse.json(
+      { erreur: "FINESS du cabinet obligatoire (9 chiffres) — nécessaire pour la demande de prise en charge." },
+      { status: 400 },
+    );
+  }
+
   const od = parserMesureOeil(body.od);
   const og = parserMesureOeil(body.og);
 

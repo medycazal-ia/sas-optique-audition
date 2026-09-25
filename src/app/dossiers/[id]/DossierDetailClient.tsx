@@ -853,6 +853,10 @@ function FormulaireCorrection({
 
   async function enregistrer(e: React.FormEvent) {
     e.preventDefault();
+    if (!/^\d{9}$/.test(finess.replace(/\s+/g, ""))) {
+      setErreur("FINESS du cabinet obligatoire (9 chiffres) — nécessaire pour la demande de prise en charge à venir.");
+      return;
+    }
     if (adaptationOpticien && !dateModification) {
       setErreur("La date de l'adaptation est requise si vous renseignez une correction opticien.");
       return;
@@ -1453,14 +1457,21 @@ function DemandeLigne({
   const [destinataireEmail, setDestinataireEmail] = useState("");
   const [erreurEmail, setErreurEmail] = useState<string | null>(null);
   const [envoiEmailEnCours, setEnvoiEmailEnCours] = useState(false);
+  const [erreurEnvoi, setErreurEnvoi] = useState<string | null>(null);
 
   const total = proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
 
   async function marquerEnvoyee() {
     setEnvoi(true);
-    await fetch(`/api/demandes-mutuelle/${demande.id}/envoyer`, { method: "POST" });
+    setErreurEnvoi(null);
+    const reponse = await fetch(`/api/demandes-mutuelle/${demande.id}/envoyer`, { method: "POST" });
     setEnvoi(false);
-    onFait();
+    if (reponse.ok) {
+      onFait();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreurEnvoi(data.erreur ?? "Erreur.");
+    }
   }
 
   async function ouvrirEnvoiEmail() {
@@ -1558,6 +1569,7 @@ function DemandeLigne({
 
       {demande.statut === "A_ENVOYER" && (
         <div className="mt-2">
+          {erreurEnvoi && <p className="mb-1 text-xs text-red-600">{erreurEnvoi}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={marquerEnvoyee}
