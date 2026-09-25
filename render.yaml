@@ -11,7 +11,12 @@ services:
     name: sas-optique-audition
     runtime: node
     plan: starter
-    buildCommand: npm install && npx prisma generate && npm run build
+    # --include=dev : NODE_ENV=production (ci-dessous) fait sinon ignorer
+    # devDependencies dès `npm install`, alors que le build (`next build`)
+    # a besoin d'outils qui y sont déclarés (Tailwind/PostCSS, TypeScript…).
+    # Sans ce flag, on retombe régulièrement sur "Cannot find module" au
+    # build pour tel ou tel paquet dev — mieux vaut les installer tous.
+    buildCommand: npm install --include=dev && npx prisma generate && npm run build
     startCommand: npx prisma migrate deploy && npx next start -p $PORT
     envVars:
       - key: DATABASE_URL
