@@ -3,10 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { hacherMotDePasse, creerSession } from "@/lib/auth";
 
 /**
- * POST /api/auth/amorcer — crée le tout premier compte (ADMIN), uniquement
+ * POST /api/auth/amorcer — crée le tout premier compte (DIRECTEUR), uniquement
  * s'il n'existe encore aucun utilisateur. Ferme la porte dès qu'un compte
- * existe : plus jamais accessible ensuite, pas de risque de créer un admin
- * supplémentaire sans authentification derrière ce endpoint.
+ * existe : plus jamais accessible ensuite, pas de risque de créer un
+ * directeur supplémentaire sans authentification derrière ce endpoint.
  */
 export async function POST(request: NextRequest) {
   const nbExistants = await prisma.utilisateur.count();
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       email,
       nom,
       motDePasseHash: await hacherMotDePasse(motDePasse),
-      role: "ADMIN",
+      role: "DIRECTEUR",
     },
   });
 

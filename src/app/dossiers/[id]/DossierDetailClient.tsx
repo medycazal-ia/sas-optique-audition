@@ -94,11 +94,13 @@ export default function DossierDetailClient({
   completude,
   propositions,
   ventesDirectes,
+  estDirecteur,
 }: {
   personne: PersonneAvecRelations;
   completude: PieceRequise[];
   propositions: PropositionAvecLignes[];
   ventesDirectes: CommandeAvecTout[];
+  estDirecteur: boolean;
 }) {
   const [idActif, setIdActif] = useState<string | null>(null);
   const [idsVisites, setIdsVisites] = useState<Set<string>>(new Set());
@@ -138,7 +140,7 @@ export default function DossierDetailClient({
           <SAVCarte propositions={propositions} />
           <ConsentementsRgpd personne={personne} />
           <SyntheseBesoin personne={personne} />
-          <JournalEvenements evenements={personne.evenements} />
+          {estDirecteur && <JournalEvenements evenements={personne.evenements} />}
         </Carrousel>
       </div>
     </SurbrillanceContext.Provider>
@@ -222,7 +224,7 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
   return (
     <Carte
       id={ID_CARTE_COORDONNEES}
-      titre="Coordonnées"
+      titre="Client"
       sousTitre="Lues par les modules Devis, Mutuelle et Facturation — jamais ressaisies ailleurs."
       emoji="📇"
       degrade="from-orange-400 to-amber-500"
@@ -340,7 +342,7 @@ function Completude({
   return (
     <Carte
       id={ID_CARTE_COMPLETUDE}
-      titre="Complétude du dossier"
+      titre="Santé"
       sousTitre="Pièce suivante à fournir, plutôt qu'un formulaire libre."
       emoji="📎"
       degrade="from-emerald-400 to-teal-500"
@@ -433,7 +435,7 @@ function Propositions({ dossierId, propositions }: { dossierId: string; proposit
   return (
     <Carte
       id={ID_CARTE_PROPOSITIONS}
-      titre="Propositions"
+      titre="Fiche"
       sousTitre="Chaque version reste consultable, même refusée ou remplacée."
       emoji="📝"
       degrade="from-sky-400 to-blue-500"
@@ -2015,7 +2017,7 @@ function ConsentementsRgpd({ personne }: { personne: Personne }) {
   return (
     <Carte
       id={ID_CARTE_CONSENTEMENTS}
-      titre="Consentements RGPD"
+      titre="RGPD"
       sousTitre="Modifiables à tout moment par le client, horodatés à chaque changement."
       emoji="🔐"
       degrade="from-sky-400 to-indigo-500"
@@ -2117,7 +2119,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
   return (
     <Carte
       id={ID_CARTE_SYNTHESE_BESOIN}
-      titre="Synthèse besoin (mini-audit vocal)"
+      titre="Audit"
       sousTitre="Généré par IA, éditable, jamais enregistré définitivement sans validation humaine explicite."
       emoji="🎙️"
       degrade="from-fuchsia-400 to-purple-500"

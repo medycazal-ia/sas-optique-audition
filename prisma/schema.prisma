@@ -35,9 +35,13 @@ model Utilisateur {
   derniereConnexionA DateTime?
 }
 
+/// DIRECTEUR : accès à toutes les fonctions, sans restriction (ex. Journal
+/// d'événements, visible uniquement par ce rôle). D'autres rôles à accès
+/// restreint (ex. CONSEILLER) viendront s'ajouter plus tard, une fois leurs
+/// restrictions précisées.
 enum RoleUtilisateur {
   COLLABORATEUR
-  ADMIN
+  DIRECTEUR
 }
 
 /// Journal d'audit : "chaque écriture significative génère un Événement

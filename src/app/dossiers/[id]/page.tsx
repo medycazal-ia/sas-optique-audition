@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { calculerCompletude, ordonnancesPerimees } from "@/lib/completude";
+import { lireSession } from "@/lib/auth";
 import DossierDetailClient from "./DossierDetailClient";
 import BarreUtilisateur from "@/components/BarreUtilisateur";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 
 export default async function DossierPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await lireSession();
+  const estDirecteur = session?.role === "DIRECTEUR";
 
   const [personne, propositions, ventesDirectes] = await Promise.all([
     prisma.personne.findUnique({
@@ -65,6 +68,13 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
     notFound();
   }
 
+  // Journal d'événements réservé au rôle DIRECTEUR — on ne renvoie même pas
+  // les événements au client si ce n'est pas le cas, plutôt que de se fier
+  // uniquement à un masquage côté affichage.
+  if (!estDirecteur) {
+    personne.evenements = [];
+  }
+
   const completude = calculerCompletude(personne.documents);
   const nbPerimees = ordonnancesPerimees(personne.ordonnances);
 
@@ -106,6 +116,7 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
         completude={completude}
         propositions={propositions}
         ventesDirectes={ventesDirectes}
+        estDirecteur={estDirecteur}
       />
     </main>
   );
