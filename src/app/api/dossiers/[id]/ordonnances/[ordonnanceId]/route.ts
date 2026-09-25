@@ -29,6 +29,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const finess = validerFiness(body.finess);
   const rpps = validerRpps(body.rpps);
 
+  // FINESS obligatoire sur une correction manuelle — voir POST ci-dessus
+  // (route .../ordonnances) pour la même règle à la création.
+  if (!finess) {
+    return NextResponse.json(
+      { erreur: "FINESS du cabinet obligatoire (9 chiffres) — nécessaire pour la demande de prise en charge." },
+      { status: 400 },
+    );
+  }
+
   const modification = body.modification ?? {};
   const dateModification =
     typeof modification.dateModification === "string" && modification.dateModification

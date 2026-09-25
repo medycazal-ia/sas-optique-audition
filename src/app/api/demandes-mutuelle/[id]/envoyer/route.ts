@@ -22,9 +22,32 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ erreur: "Seule une demande à envoyer peut être marquée envoyée." }, { status: 409 });
   }
 
+  // Le FINESS peut avoir été complété sur l'ordonnance après la création de
+  // cette demande (instantané pris à l'acceptation de la proposition) — on
+  // relit la dernière ordonnance optique pour ne pas bloquer inutilement un
+  // envoi devenu possible depuis, avant d'appliquer le blocage obligatoire
+  // (une mutuelle exige le FINESS sur toute demande de prise en charge).
+  const derniereOrdonnance = await prisma.ordonnance.findFirst({
+    where: { personneId: demande.personneId, type: "OPTIQUE" },
+    orderBy: { dateEmission: "desc" },
+    select: { finess: true, rpps: true },
+  });
+  const finess = demande.finess ?? derniereOrdonnance?.finess ?? null;
+  const rpps = demande.rpps ?? derniereOrdonnance?.rpps ?? null;
+
+  if (!finess) {
+    return NextResponse.json(
+      {
+        erreur:
+          "FINESS du cabinet prescripteur manquant — complétez l'ordonnance (carte Fiche) avant d'envoyer cette demande.",
+      },
+      { status: 409 },
+    );
+  }
+
   const mise_a_jour = await prisma.demandePriseEnCharge.update({
     where: { id },
-    data: { statut: "ENVOYEE", envoyeeA: new Date() },
+    data: { statut: "ENVOYEE", envoyeeA: new Date(), finess, rpps },
   });
 
   await journaliser({

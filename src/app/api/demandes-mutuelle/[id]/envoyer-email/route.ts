@@ -47,6 +47,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
+  // Le FINESS peut avoir été complété sur l'ordonnance après la création de
+  // cette demande (instantané pris à l'acceptation de la proposition) — on
+  // relit la dernière ordonnance optique avant d'appliquer le blocage
+  // obligatoire (une mutuelle exige le FINESS sur toute demande envoyée).
+  const derniereOrdonnance = await prisma.ordonnance.findFirst({
+    where: { personneId: demande.personneId, type: "OPTIQUE" },
+    orderBy: { dateEmission: "desc" },
+    select: { finess: true, rpps: true },
+  });
+  const finess = demande.finess ?? derniereOrdonnance?.finess ?? null;
+  const rpps = demande.rpps ?? derniereOrdonnance?.rpps ?? null;
+
+  if (!finess) {
+    return NextResponse.json(
+      {
+        erreur:
+          "FINESS du cabinet prescripteur manquant — complétez l'ordonnance (carte Fiche) avant d'envoyer cette demande.",
+      },
+      { status: 409 },
+    );
+  }
+
   const totalTTC = demande.proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
 
   try {
@@ -60,7 +82,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         numeroContrat: personne.mutuelleNumeroContrat,
         plateforme: personne.mutuellePlateforme,
       },
-      prescripteur: { finess: demande.finess, rpps: demande.rpps },
+      prescripteur: { finess, rpps },
       proposition: {
         creeA: demande.proposition.creeA,
         totalTTC,
@@ -74,7 +96,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const mise_a_jour = await prisma.demandePriseEnCharge.update({
     where: { id },
-    data: { statut: "ENVOYEE", envoyeeA: new Date(), canalEnvoi: "email", destinataireEnvoi: destinataire },
+    data: { statut: "ENVOYEE", envoyeeA: new Date(), canalEnvoi: "email", destinataireEnvoi: destinataire, finess, rpps },
   });
 
   await journaliser({
