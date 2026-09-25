@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
-import { lireSession } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { lireSession, creerSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { modifierMonProfil, ErreurUtilisateur } from "@/lib/utilisateurs";
 
 export async function GET() {
   const session = await lireSession();
@@ -21,8 +22,40 @@ export async function GET() {
   const superAdminEmailsConfigure = liste.length > 0;
   const monEmailEstDansLaListe = liste.includes(session.email.trim().toLowerCase());
 
+  const profil = await prisma.utilisateur.findUnique({
+    where: { id: session.id },
+    select: { prenom: true, telephonePerso: true, pseudo: true },
+  });
+
   return NextResponse.json({
     session,
+    profil,
     diagnosticSuperAdmin: { superAdminEmailsConfigure, monEmailEstDansLaListe },
   });
+}
+
+/**
+ * PATCH /api/auth/moi — édition de son propre profil, accessible à tout
+ * compte connecté (collaborateur compris) sans passer par un directeur.
+ * Réémet aussitôt le cookie de session avec le nom/email à jour, pour ne
+ * pas avoir à se reconnecter pour les voir reflétés (rôle inchangé, seul un
+ * directeur peut le modifier).
+ */
+export async function PATCH(request: NextRequest) {
+  const session = await lireSession();
+  if (!session) {
+    return NextResponse.json({ erreur: "Non authentifié." }, { status: 401 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  try {
+    const utilisateur = await modifierMonProfil(session, body);
+    await creerSession({ id: utilisateur.id, email: utilisateur.email, nom: utilisateur.nom, role: session.role });
+    return NextResponse.json(utilisateur);
+  } catch (e) {
+    if (e instanceof ErreurUtilisateur) {
+      return NextResponse.json({ erreur: e.message }, { status: e.statut });
+    }
+    throw e;
+  }
 }

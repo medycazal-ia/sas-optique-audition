@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
 import { soldeRestant } from "@/lib/facturation";
+import { estCompteDemo } from "@/lib/demo";
 
 const RESULTATS_MAX = 20;
 
@@ -133,6 +134,7 @@ export async function POST(request: NextRequest) {
       numeroSecuriteSociale,
       civilite: typeof body.civilite === "string" ? body.civilite : null,
       dateNaissance: body.dateNaissance ? new Date(body.dateNaissance) : null,
+      estDemo: estCompteDemo(session?.email),
     },
   });
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import path from "path";
 
 const DOSSIER_BASE = process.env.STOCKAGE_LOCAL_DOSSIER ?? "./stockage-local/documents";
@@ -29,6 +29,16 @@ export async function enregistrerFichier(
   await writeFile(cheminAbsolu, contenu);
 
   return { cheminStockage: cheminRelatif };
+}
+
+/**
+ * Supprime tous les fichiers d'une personne (un dossier par personne, voir
+ * enregistrerFichier). Seul cas où l'appli supprime des fichiers déjà
+ * enregistrés — réservé à la réinitialisation des données démo.
+ */
+export async function supprimerFichiersPersonne(personneId: string): Promise<void> {
+  const cheminAbsolu = path.join(DOSSIER_BASE, personneId);
+  await rm(cheminAbsolu, { recursive: true, force: true });
 }
 
 export async function lireFichier(cheminStockage: string): Promise<Buffer> {
