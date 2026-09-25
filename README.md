@@ -137,6 +137,15 @@ la correction d'une extraction restent toujours possibles sans cette clé.
 Une valeur extraite est marquée « à vérifier » tant qu'un humain ne l'a
 pas relue/corrigée au moins une fois.
 
+L'OCR extrait aussi le cabinet, son numéro **FINESS** (9 chiffres — seul
+numéro obligatoire pour qu'un cabinet entre dans l'annuaire) et le numéro
+**RPPS** du praticien (11 chiffres, si présent sur l'ordonnance) — formats
+vérifiés auprès de sources officielles. Un annuaire (`model Cabinet`,
+`src/lib/cabinets.ts`) se construit au fur et à mesure des ordonnances
+créées/corrigées (OCR ou saisie manuelle), et sert à l'autocomplétion
+(`GET /api/cabinets?q=...`) en cas d'OCR défaillant ou de création
+manuelle du dossier — plutôt que de tout retaper à chaque fois.
+
 ## Conformité données de santé
 
 **Important, à lire avant toute mise en production** :

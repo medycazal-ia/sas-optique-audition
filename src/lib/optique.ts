@@ -70,3 +70,25 @@ export function parserMesureOeil(source: unknown): MesureOeil {
     addition: bornerNombre(m.addition, BORNES_MESURE.addition),
   };
 }
+
+/**
+ * Le FINESS (établissement de santé) et le RPPS (praticien) sont chacun
+ * une suite de chiffres exacte — 9 pour le FINESS, 11 pour le RPPS, sans
+ * lettre ni séparateur (vérifié auprès de sources officielles, voir PR).
+ * Tolère les espaces éventuels d'une saisie/OCR ("123 456 789") avant de
+ * vérifier la longueur ; toute valeur qui n'a pas exactement le bon
+ * nombre de chiffres devient null plutôt qu'être stockée telle quelle.
+ */
+function validerNumeroChiffres(valeur: unknown, longueur: number): string | null {
+  if (typeof valeur !== "string") return null;
+  const chiffres = valeur.replace(/\s+/g, "");
+  return /^\d+$/.test(chiffres) && chiffres.length === longueur ? chiffres : null;
+}
+
+export function validerFiness(valeur: unknown): string | null {
+  return validerNumeroChiffres(valeur, 9);
+}
+
+export function validerRpps(valeur: unknown): string | null {
+  return validerNumeroChiffres(valeur, 11);
+}

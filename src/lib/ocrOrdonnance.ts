@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { parserMesureOeil, type MesureOeil } from "@/lib/optique";
+import { parserMesureOeil, validerFiness, validerRpps, type MesureOeil } from "@/lib/optique";
 
 /**
  * Extraction des mesures d'une ordonnance optique scannée, par IA de
@@ -16,6 +16,9 @@ const MODELE = process.env.ANTHROPIC_MODELE_OCR ?? "claude-sonnet-5";
 export type ResultatExtraction = {
   dateEmission: string | null; // "YYYY-MM-DD"
   emisePar: string | null;
+  cabinetNom: string | null;
+  finess: string | null;
+  rpps: string | null;
   od: MesureOeil;
   og: MesureOeil;
 };
@@ -25,6 +28,9 @@ const PROMPT = `Tu es un assistant spécialisé dans la lecture d'ordonnances op
 {
   "dateEmission": "YYYY-MM-DD ou null si illisible/absente",
   "emisePar": "nom du praticien prescripteur ou null",
+  "cabinetNom": "nom du cabinet/cabinet médical ou null",
+  "finess": "numéro FINESS du cabinet (9 chiffres, sans espace) ou null si absent/illisible",
+  "rpps": "numéro RPPS du praticien (11 chiffres, sans espace) ou null si absent/illisible",
   "od": { "sphere": nombre ou null, "cylindre": nombre ou null, "axe": entier 0-180 ou null, "addition": nombre ou null },
   "og": { "sphere": nombre ou null, "cylindre": nombre ou null, "axe": entier 0-180 ou null, "addition": nombre ou null }
 }
@@ -34,6 +40,7 @@ Règles impératives :
 - Les ophtalmologistes français écrivent en cylindre NÉGATIF — reporte le signe exactement tel qu'écrit sur l'ordonnance, ne transpose rien.
 - Sphère et cylindre sont en dioptries, par quart de dioptrie (0.25) — ex: +1.25, -0.50.
 - "addition" (ADD) n'est présente qu'en cas de vision de près/progressifs — sinon null.
+- Le FINESS et le RPPS sont généralement imprimés en petits caractères dans l'en-tête ou le pied de l'ordonnance, près du nom du cabinet/praticien — cherche-les spécifiquement, ne les confonds pas avec un numéro de téléphone, de sécurité sociale ou d'ADELI (ancien identifiant, différent du RPPS).
 - Si une valeur est illisible, ambiguë, ou absente, réponds null pour ce champ précis plutôt que de deviner.
 - N'invente jamais de valeur : mieux vaut null qu'une estimation.`;
 
@@ -87,10 +94,14 @@ export async function extraireMesuresOrdonnance(contenu: Buffer, nomFichier: str
   const dateEmission =
     typeof brut.dateEmission === "string" && /^\d{4}-\d{2}-\d{2}$/.test(brut.dateEmission) ? brut.dateEmission : null;
   const emisePar = typeof brut.emisePar === "string" && brut.emisePar.trim() ? brut.emisePar.trim() : null;
+  const cabinetNom = typeof brut.cabinetNom === "string" && brut.cabinetNom.trim() ? brut.cabinetNom.trim() : null;
 
   return {
     dateEmission,
     emisePar,
+    cabinetNom,
+    finess: validerFiness(brut.finess),
+    rpps: validerRpps(brut.rpps),
     od: parserMesureOeil(brut.od),
     og: parserMesureOeil(brut.og),
   };

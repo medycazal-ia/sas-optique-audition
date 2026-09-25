@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
-import { parserMesureOeil } from "@/lib/optique";
+import { parserMesureOeil, validerFiness, validerRpps } from "@/lib/optique";
+import { enregistrerCabinetSiValide } from "@/lib/cabinets";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -20,6 +21,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const dateEmission = typeof body.dateEmission === "string" && body.dateEmission ? new Date(body.dateEmission) : new Date();
   const emisePar = typeof body.emisePar === "string" && body.emisePar.trim() ? body.emisePar.trim() : null;
+  const cabinetNom = typeof body.cabinetNom === "string" && body.cabinetNom.trim() ? body.cabinetNom.trim() : null;
+  const finess = validerFiness(body.finess);
+  const rpps = validerRpps(body.rpps);
   const od = parserMesureOeil(body.od);
   const og = parserMesureOeil(body.og);
 
@@ -29,6 +33,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       type: "OPTIQUE",
       dateEmission,
       emisePar,
+      cabinetNom,
+      finess,
+      rpps,
       sphereOD: od.sphere,
       cylindreOD: od.cylindre,
       axeOD: od.axe,
@@ -39,6 +46,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       additionOG: og.addition,
     },
   });
+
+  await enregistrerCabinetSiValide(cabinetNom, finess);
 
   await journaliser({
     type: "ordonnance.creee",

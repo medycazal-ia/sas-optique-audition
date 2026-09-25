@@ -681,6 +681,16 @@ function TableauCorrection({ ordonnance }: { ordonnance: Ordonnance }) {
 
   return (
     <div className="overflow-x-auto">
+      {(ordonnance.cabinetNom || ordonnance.finess || ordonnance.rpps) && (
+        <p className="mb-2 text-xs text-neutral-600">
+          {ordonnance.cabinetNom && <span className="font-medium">{ordonnance.cabinetNom}</span>}
+          {ordonnance.finess && <span> · FINESS {ordonnance.finess}</span>}
+          {ordonnance.rpps && <span> · RPPS {ordonnance.rpps}</span>}
+        </p>
+      )}
+      {ordonnance.cabinetNom && !ordonnance.finess && (
+        <p className="mb-2 text-xs text-amber-700">⚠️ FINESS manquant — obligatoire pour identifier le cabinet.</p>
+      )}
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-neutral-400">
@@ -763,17 +773,42 @@ function FormulaireCorrection({
   const [od, setOd] = useState<MesureOeilTexte>(versTexte(ordonnance, "OD"));
   const [og, setOg] = useState<MesureOeilTexte>(versTexte(ordonnance, "OG"));
   const [emisePar, setEmisePar] = useState(ordonnance?.emisePar ?? "");
+  const [cabinetNom, setCabinetNom] = useState(ordonnance?.cabinetNom ?? "");
+  const [finess, setFiness] = useState(ordonnance?.finess ?? "");
+  const [rpps, setRpps] = useState(ordonnance?.rpps ?? "");
+  const [suggestionsCabinets, setSuggestionsCabinets] = useState<{ id: string; nom: string; finess: string }[]>([]);
   const [dateEmission, setDateEmission] = useState(
     ordonnance ? new Date(ordonnance.dateEmission).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
   );
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
+  useEffect(() => {
+    const q = cabinetNom.trim();
+    if (q.length < 2) {
+      setSuggestionsCabinets([]);
+      return;
+    }
+    const minuteur = setTimeout(() => {
+      fetch(`/api/cabinets?q=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then(setSuggestionsCabinets)
+        .catch(() => {});
+    }, 200);
+    return () => clearTimeout(minuteur);
+  }, [cabinetNom]);
+
+  function surChangementCabinetNom(valeur: string) {
+    setCabinetNom(valeur);
+    const correspondance = suggestionsCabinets.find((c) => c.nom === valeur);
+    if (correspondance) setFiness(correspondance.finess);
+  }
+
   async function enregistrer(e: React.FormEvent) {
     e.preventDefault();
     setEnvoi(true);
     setErreur(null);
-    const corps = { dateEmission, emisePar, od: versNombre(od), og: versNombre(og) };
+    const corps = { dateEmission, emisePar, cabinetNom, finess, rpps, od: versNombre(od), og: versNombre(og) };
     const url = ordonnance
       ? `/api/dossiers/${dossierId}/ordonnances/${ordonnance.id}`
       : `/api/dossiers/${dossierId}/ordonnances`;
@@ -816,6 +851,41 @@ function FormulaireCorrection({
           <input
             value={emisePar}
             onChange={(e) => setEmisePar(e.target.value)}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </label>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <label className="text-xs">
+          Cabinet
+          <input
+            list="suggestions-cabinets"
+            value={cabinetNom}
+            onChange={(e) => surChangementCabinetNom(e.target.value)}
+            placeholder="Nom du cabinet"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+          <datalist id="suggestions-cabinets">
+            {suggestionsCabinets.map((c) => (
+              <option key={c.id} value={c.nom} />
+            ))}
+          </datalist>
+        </label>
+        <label className="text-xs">
+          FINESS (obligatoire, 9 chiffres)
+          <input
+            value={finess}
+            onChange={(e) => setFiness(e.target.value)}
+            placeholder="123456789"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        </label>
+        <label className="text-xs">
+          RPPS (si présent, 11 chiffres)
+          <input
+            value={rpps}
+            onChange={(e) => setRpps(e.target.value)}
+            placeholder="12345678901"
             className="mt-1 w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
           />
         </label>
