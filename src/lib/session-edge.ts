@@ -9,7 +9,7 @@ export type SessionUtilisateur = {
   id: string;
   email: string;
   nom: string;
-  role: "COLLABORATEUR" | "ADMIN";
+  role: "COLLABORATEUR" | "DIRECTEUR";
 };
 
 export const NOM_COOKIE_SESSION = "session";
@@ -31,7 +31,7 @@ export async function verifierJetonSession(jeton: string): Promise<SessionUtilis
       id: payload.id as string,
       email: payload.email as string,
       nom: payload.nom as string,
-      role: payload.role as "COLLABORATEUR" | "ADMIN",
+      role: payload.role as "COLLABORATEUR" | "DIRECTEUR",
     };
   } catch {
     return null;

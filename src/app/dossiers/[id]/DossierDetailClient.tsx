@@ -94,11 +94,13 @@ export default function DossierDetailClient({
   completude,
   propositions,
   ventesDirectes,
+  estDirecteur,
 }: {
   personne: PersonneAvecRelations;
   completude: PieceRequise[];
   propositions: PropositionAvecLignes[];
   ventesDirectes: CommandeAvecTout[];
+  estDirecteur: boolean;
 }) {
   const [idActif, setIdActif] = useState<string | null>(null);
   const [idsVisites, setIdsVisites] = useState<Set<string>>(new Set());
@@ -138,7 +140,7 @@ export default function DossierDetailClient({
           <SAVCarte propositions={propositions} />
           <ConsentementsRgpd personne={personne} />
           <SyntheseBesoin personne={personne} />
-          <JournalEvenements evenements={personne.evenements} />
+          {estDirecteur && <JournalEvenements evenements={personne.evenements} />}
         </Carrousel>
       </div>
     </SurbrillanceContext.Provider>

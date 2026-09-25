@@ -36,7 +36,7 @@ export default function PremiereConnexionPage() {
         <span className="text-4xl">🛠️</span>
         <h1 className="mt-2 text-2xl font-extrabold text-neutral-900">Premier compte</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          Ce compte sera administrateur. Cette page ne fonctionne qu&apos;une seule fois — tant
+          Ce compte sera directeur (accès à toutes les fonctions). Cette page ne fonctionne qu&apos;une seule fois — tant
           qu&apos;aucun compte n&apos;existe.
         </p>
       </div>
@@ -80,7 +80,7 @@ export default function PremiereConnexionPage() {
           disabled={envoi}
           className="w-full rounded-full bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:scale-[1.02] disabled:opacity-50"
         >
-          {envoi ? "Création…" : "Créer le compte admin"}
+          {envoi ? "Création…" : "Créer le compte directeur"}
         </button>
       </form>
     </main>
