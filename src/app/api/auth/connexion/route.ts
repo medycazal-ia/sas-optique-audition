@@ -14,8 +14,14 @@ export async function POST(request: NextRequest) {
   const utilisateur = await prisma.utilisateur.findUnique({ where: { email } });
 
   // Message volontairement identique que l'email existe ou non, pour ne pas
-  // révéler quels comptes existent.
-  if (!utilisateur || !utilisateur.actif || !(await verifierMotDePasse(motDePasse, utilisateur.motDePasseHash))) {
+  // révéler quels comptes existent — un banni ou un désactivé voit la même
+  // erreur qu'un mot de passe faux.
+  if (
+    !utilisateur ||
+    !utilisateur.actif ||
+    utilisateur.banni ||
+    !(await verifierMotDePasse(motDePasse, utilisateur.motDePasseHash))
+  ) {
     return NextResponse.json({ erreur: "Identifiants incorrects." }, { status: 401 });
   }
 

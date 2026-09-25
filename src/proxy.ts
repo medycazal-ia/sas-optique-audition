@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { NOM_COOKIE_SESSION, verifierJetonSession } from "@/lib/session-edge";
+import { NOM_COOKIE_SESSION, verifierJetonSession, sessionEstSuperAdmin } from "@/lib/session-edge";
 
 // Next.js 16 a renommé le fichier "middleware" en "proxy" (même mécanisme,
 // nouveau nom — voir node_modules/next/dist/docs/.../proxy.md).
@@ -16,10 +16,32 @@ const PREFIXES_PROTEGES = [
   "/api/livraisons",
   "/api/factures",
   "/api/sav",
+  "/utilisateurs",
+  "/api/utilisateurs",
 ];
+
+// Barrière supplémentaire, avant même la page/l'API : un directeur ne doit
+// jamais recevoir la moindre réponse distinctive de ces routes (un 401 ou
+// une redirection connexion révélerait déjà que la route existe) — 404
+// générique pour quiconque n'est pas reconnu super admin, authentifié ou
+// non. Redondant avec la revérification faite par la page/l'API elle-même
+// (défense en profondeur), volontairement.
+const PREFIXES_SUPER_ADMIN = ["/super-admin", "/api/super-admin"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  const estSuperAdminProtege = PREFIXES_SUPER_ADMIN.some(
+    (prefixe) => pathname === prefixe || pathname.startsWith(`${prefixe}/`),
+  );
+  if (estSuperAdminProtege) {
+    const jeton = request.cookies.get(NOM_COOKIE_SESSION)?.value;
+    const session = jeton ? await verifierJetonSession(jeton) : null;
+    if (!sessionEstSuperAdmin(session)) {
+      return new NextResponse("Not Found", { status: 404 });
+    }
+    return NextResponse.next();
+  }
 
   const estProtege = PREFIXES_PROTEGES.some(
     (prefixe) => pathname === prefixe || pathname.startsWith(`${prefixe}/`),
@@ -57,5 +79,9 @@ export const config = {
     "/api/livraisons/:path*",
     "/api/factures/:path*",
     "/api/sav/:path*",
+    "/utilisateurs/:path*",
+    "/api/utilisateurs/:path*",
+    "/super-admin/:path*",
+    "/api/super-admin/:path*",
   ],
 };

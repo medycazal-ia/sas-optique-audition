@@ -88,6 +88,35 @@ fiche dossier se parcourent en carrousel glissable.
 Les autres modules du dossier de cadrage lisent ce module en lecture seule —
 aucune information saisie ici ne doit être ressaisie ailleurs.
 
+## Comptes utilisateurs, rôles & Super Admin
+
+Trois rôles, strictement hiérarchisés :
+
+- **COLLABORATEUR** — accès comptoir courant (dossiers, produits, etc.).
+- **DIRECTEUR** — tout ce qu'un collaborateur a, plus la carte
+  **Utilisateurs** (`/utilisateurs`) : créer/éditer des comptes
+  collaborateur/directeur, les activer/désactiver, et les bannir
+  (`src/lib/utilisateurs.ts`). Un bannissement est **définitif** — pas de
+  "débannir" : les données et l'historique du compte restent consultables,
+  mais la connexion est perdue pour de bon.
+- **SUPER_ADMIN** — au-dessus de tout, y compris des directeurs. Voit et
+  gère absolument tous les comptes via la carte **Super Admin**
+  (`/super-admin`), invisible et inaccessible (404) pour tout autre rôle —
+  y compris à l'API. Ce rôle **ne s'attribue jamais depuis
+  l'application** (aucune route ne l'accepte), par deux mécanismes
+  volontairement indépendants et redondants :
+  1. La variable d'environnement `SUPER_ADMIN_EMAILS` (liste d'emails
+     séparés par des virgules), réglable uniquement depuis le tableau de
+     bord Render — `sync: false` dans `render.yaml`, jamais commit dans le
+     dépôt.
+  2. Le rôle `SUPER_ADMIN` posé à la main en base, en accès direct SQL
+     (ex. console Postgres de Render) — `UPDATE "Utilisateur" SET role =
+     'SUPER_ADMIN' WHERE email = '...'`.
+
+  Avoir les deux moyens d'accès (Render et accès direct base) garantit de
+  ne jamais être bloqué si l'un des deux pose problème, et de pouvoir
+  retrouver l'accès par l'un si l'autre est perdu.
+
 ## Conformité données de santé
 
 **Important, à lire avant toute mise en production** :
