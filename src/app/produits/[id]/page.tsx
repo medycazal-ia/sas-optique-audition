@@ -27,9 +27,15 @@ export default async function ProduitPage({ params }: { params: Promise<{ id: st
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
       <div className="flex items-center justify-between">
-        <Link href="/produits" className="text-sm text-neutral-500 hover:underline">
-          ← Retour au catalogue
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/produits" className="text-sm text-neutral-500 hover:underline">
+            ← Retour au catalogue
+          </Link>
+          <span className="text-neutral-300">·</span>
+          <Link href="/" className="text-sm text-neutral-500 hover:underline">
+            Accueil
+          </Link>
+        </div>
         <BarreUtilisateur />
       </div>
 

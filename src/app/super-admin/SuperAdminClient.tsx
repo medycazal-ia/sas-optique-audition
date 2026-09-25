@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { Utilisateur } from "@prisma/client";
 import { FormulaireCreation, LigneUtilisateur, PopupStatutCompte } from "../utilisateurs/UtilisateursClient";
 import { useMonProfil } from "@/lib/monProfil";
@@ -48,6 +49,11 @@ export default function SuperAdminClient({
             "radial-gradient(circle at 50% 0%, rgba(217,164,65,0.14), transparent 60%), radial-gradient(circle at 50% 0%, rgba(217,164,65,0.14), transparent 60%)",
         }}
       >
+        <div className="mx-auto max-w-3xl">
+          <Link href="/" className="text-sm text-neutral-500 underline hover:text-neutral-300">
+            ← Accueil
+          </Link>
+        </div>
         <div className="mx-auto max-w-3xl text-center">
           <span className="text-5xl drop-shadow-[0_0_20px_rgba(217,164,65,0.5)]">👑</span>
           <p className="mt-3 text-xs font-semibold uppercase tracking-[0.3em] text-amber-400/80">

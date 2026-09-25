@@ -60,9 +60,15 @@ export default function NouveauProduitPage() {
 
   return (
     <main className="mx-auto w-full max-w-xl flex-1 px-6 py-12">
-      <Link href="/produits" className="text-sm text-neutral-500 hover:underline">
-        ← Retour au catalogue
-      </Link>
+      <div className="flex items-center gap-3">
+        <Link href="/produits" className="text-sm text-neutral-500 hover:underline">
+          ← Retour au catalogue
+        </Link>
+        <span className="text-neutral-300">·</span>
+        <Link href="/" className="text-sm text-neutral-500 hover:underline">
+          Accueil
+        </Link>
+      </div>
       <div className="mt-3 flex items-center gap-3">
         <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-500 text-2xl shadow-md">
           🧾

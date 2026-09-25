@@ -45,9 +45,15 @@ export default function NouveauDossierPage() {
 
   return (
     <main className="mx-auto w-full max-w-xl flex-1 px-6 py-12">
-      <Link href="/dossiers" className="text-sm text-neutral-500 hover:underline">
-        ← Retour aux dossiers
-      </Link>
+      <div className="flex items-center gap-3">
+        <Link href="/dossiers" className="text-sm text-neutral-500 hover:underline">
+          ← Retour aux dossiers
+        </Link>
+        <span className="text-neutral-300">·</span>
+        <Link href="/" className="text-sm text-neutral-500 hover:underline">
+          Accueil
+        </Link>
+      </div>
       <div className="mt-3 flex items-center gap-3">
         <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-fuchsia-500 text-2xl shadow-md">
           🧾

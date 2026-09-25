@@ -47,7 +47,10 @@ export default async function CatalogueProduitsPage({
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-12">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <Link href="/" className="text-sm text-neutral-500 hover:underline">
+          ← Accueil
+        </Link>
         <BarreUtilisateur />
       </div>
       <div className="mt-2 flex items-center justify-between">
