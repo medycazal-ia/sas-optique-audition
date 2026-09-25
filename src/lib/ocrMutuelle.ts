@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { detecterTypeMime } from "@/lib/detectionMime";
 
 /**
  * Extraction des informations d'une carte de mutuelle/tiers payant
@@ -33,15 +34,8 @@ Règles impératives :
 - Certaines cartes n'ont qu'un seul numéro (adhérent OU contrat) — ne duplique jamais une valeur dans les deux champs si un seul est réellement présent.
 - Le NIR (numéro de sécurité sociale) fait 13 chiffres (parfois 15 avec la clé) — ne le confonds pas avec le numéro d'adhérent.
 - Si une valeur est illisible, ambiguë, ou absente, réponds null pour ce champ précis plutôt que de deviner.
-- N'invente jamais de valeur : mieux vaut null qu'une estimation.`;
-
-function detecterTypeMime(nomFichier: string): string {
-  const ext = nomFichier.toLowerCase().split(".").pop() ?? "";
-  if (ext === "png") return "image/png";
-  if (ext === "webp") return "image/webp";
-  if (ext === "pdf") return "application/pdf";
-  return "image/jpeg";
-}
+- N'invente jamais de valeur : mieux vaut null qu'une estimation.
+- Réponds TOUJOURS avec exactement ce JSON, quoi qu'il arrive — même si l'image est floue, mal cadrée, pas du tout une carte de mutuelle, ou si tu ne peux rien y lire : dans ce cas, mets tous les champs à null. Ne réponds jamais par une phrase, une excuse ou un refus : uniquement le JSON, rien avant, rien après.`;
 
 export async function extraireMutuelle(contenu: Buffer, nomFichier: string): Promise<ResultatExtractionMutuelle> {
   const cleApi = process.env.ANTHROPIC_API_KEY;
@@ -50,7 +44,7 @@ export async function extraireMutuelle(contenu: Buffer, nomFichier: string): Pro
   }
 
   const client = new Anthropic({ apiKey: cleApi });
-  const mediaType = detecterTypeMime(nomFichier);
+  const mediaType = detecterTypeMime(contenu, nomFichier);
   const donneesBase64 = contenu.toString("base64");
 
   const blocContenu =
@@ -58,19 +52,30 @@ export async function extraireMutuelle(contenu: Buffer, nomFichier: string): Pro
       ? ({ type: "document", source: { type: "base64", media_type: mediaType, data: donneesBase64 } } as const)
       : ({
           type: "image",
-          source: { type: "base64", media_type: mediaType as "image/jpeg" | "image/png" | "image/webp", data: donneesBase64 },
+          source: {
+            type: "base64",
+            media_type: mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+            data: donneesBase64,
+          },
         } as const);
 
   const reponse = await client.messages.create({
     model: MODELE,
     max_tokens: 512,
-    messages: [{ role: "user", content: [blocContenu, { type: "text", text: PROMPT }] }],
+    messages: [
+      { role: "user", content: [blocContenu, { type: "text", text: PROMPT }] },
+      // Voir ocrOrdonnance.ts pour l'explication de ce préremplissage.
+      { role: "assistant", content: "{" },
+    ],
   });
 
-  const texte = reponse.content.find((bloc) => bloc.type === "text")?.text ?? "";
+  const texte = "{" + (reponse.content.find((bloc) => bloc.type === "text")?.text ?? "");
   const jsonMatch = texte.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error("Réponse de l'IA de vision illisible (aucun JSON trouvé).");
+    console.error("Extraction mutuelle — réponse IA sans JSON exploitable :", texte);
+    throw new Error(
+      "L'IA de vision n'a pas réussi à lire ce document — vérifiez la qualité/le cadrage du scan et réessayez.",
+    );
   }
 
   const brut = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
