@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { hacherMotDePasse } from "@/lib/auth";
 import { supprimerFichiersPersonne } from "@/lib/stockageFichiers";
+import { IDENTIFIANTS_DEMO } from "@/lib/identifiantsDemo";
+
+export { IDENTIFIANTS_DEMO, estCompteDemo } from "@/lib/identifiantsDemo";
 
 /**
  * Mode démo — comptes et dossiers fictifs prêts à l'emploi, pour montrer
@@ -15,18 +18,6 @@ import { supprimerFichiersPersonne } from "@/lib/stockageFichiers";
  * seul endroit de l'application qui supprime réellement des données,
  * justement parce que ce ne sont jamais de vraies données client.
  */
-
-export const IDENTIFIANTS_DEMO = {
-  directeur: { email: "directeur.demo@sas-optique.fr", motDePasse: "DemoDirecteur1" },
-  collaborateur: { email: "collaborateur.demo@sas-optique.fr", motDePasse: "DemoCollab1" },
-} as const;
-
-const EMAILS_DEMO: string[] = [IDENTIFIANTS_DEMO.directeur.email, IDENTIFIANTS_DEMO.collaborateur.email];
-
-export function estCompteDemo(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return EMAILS_DEMO.includes(email.trim().toLowerCase());
-}
 
 const DOSSIERS_DEMO = [
   { prenom: "Sophie", nom: "Lambert", telephone: "0601020304" },
