@@ -23,6 +23,10 @@ services:
 
 databases:
   - name: sas-optique-audition-db
-    plan: starter
+    # "starter" (legacy) n'est plus proposé pour les nouvelles bases Render.
+    # "free" convient pour une démo mais Render supprime les bases gratuites
+    # après ~30 jours d'inactivité/âge — passer à "basic-256mb" (payant, non
+    # expirant) si la démo doit durer plus longtemps.
+    plan: free
     databaseName: sas_optique_audition
     user: sasapp

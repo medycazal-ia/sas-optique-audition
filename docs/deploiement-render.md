@@ -14,9 +14,8 @@ rapide à faire de votre côté.
 1. Aller sur [render.com](https://render.com) et se connecter (ou créer un
    compte).
 2. **New → Blueprint**.
-3. Connecter le dépôt GitHub `medycazal-ia/sas-optique-audition` et choisir
-   la branche à déployer (ex. `main` une fois la pull request fusionnée, ou
-   directement `claude/relaxed-rubin-nlr7ju` pour tester avant fusion).
+3. Connecter le dépôt GitHub `medycazal-ia/sas-optique-audition`, branche
+   `main` (tous les lots réalisés y sont fusionnés).
 4. Render détecte automatiquement `render.yaml` à la racine et propose de
    créer :
    - un **service web** (`sas-optique-audition`) qui build et lance
@@ -35,12 +34,15 @@ rapide à faire de votre côté.
   certifiée pour héberger de vraies données de santé — voir
   `docs/conformite-hds.md` pour la marche à suivre avant toute mise en
   production réelle.
-- **Authentification** : le Lot 1 n'a pas encore de contrôle d'accès
-  utilisateur — cette démo est donc ouverte à quiconque a l'URL. Ne pas y
-  mettre de vraies informations personnelles.
-- **Plan tarifaire** : les noms de plans (`starter` dans `render.yaml`)
-  peuvent changer chez Render — vérifier les tarifs actuels au moment du
-  déploiement.
+- **Authentification** : une vraie authentification existe (email + mot de
+  passe), mais aucun compte n'existe au premier déploiement — passer par
+  `/premiere-connexion` pour créer le tout premier compte collaborateur
+  (cet endpoint se ferme dès qu'un compte existe).
+- **Plan tarifaire** : les noms de plans dans `render.yaml` (`starter` pour
+  le service web, `free` pour la base) peuvent changer chez Render —
+  vérifier les tarifs/disponibilité actuels au moment du déploiement. La
+  base en plan `free` est supprimée par Render après ~30 jours — passer à
+  `basic-256mb` (payant) si la démo doit durer plus longtemps.
 
 ## Alternative sans compte à créer
 
