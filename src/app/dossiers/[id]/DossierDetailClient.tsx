@@ -49,7 +49,20 @@ type PropositionAvecLignes = Proposition & {
   commandes: CommandeAvecTout[];
 };
 
+// Chaque carte a un id — pas seulement Facturation — pour que le mécanisme
+// de surbrillance (ci-dessous) fonctionne de la même façon quelle que soit
+// la carte visitée par clic ou redirection, présente ou future (y compris
+// une future activation vocale : elle n'aurait qu'à appeler `activer(id)`).
+const ID_CARTE_COORDONNEES = "carte-coordonnees";
+const ID_CARTE_COMPLETUDE = "carte-completude";
+const ID_CARTE_PROPOSITIONS = "carte-propositions";
+const ID_CARTE_MUTUELLE = "carte-mutuelle";
+const ID_CARTE_COMMANDE_LIVRAISON = "carte-commande-livraison";
 const ID_CARTE_FACTURATION = "carte-facturation";
+const ID_CARTE_SAV = "carte-sav";
+const ID_CARTE_CONSENTEMENTS = "carte-consentements";
+const ID_CARTE_SYNTHESE_BESOIN = "carte-synthese-besoin";
+const ID_CARTE_JOURNAL = "carte-journal";
 
 /**
  * Suivi, pour la durée de cette page seulement (aucune persistance — remis à
@@ -207,6 +220,7 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
 
   return (
     <Carte
+      id={ID_CARTE_COORDONNEES}
       titre="Coordonnées"
       sousTitre="Lues par les modules Devis, Mutuelle et Facturation — jamais ressaisies ailleurs."
       emoji="📇"
@@ -324,6 +338,7 @@ function Completude({
 
   return (
     <Carte
+      id={ID_CARTE_COMPLETUDE}
       titre="Complétude du dossier"
       sousTitre="Pièce suivante à fournir, plutôt qu'un formulaire libre."
       emoji="📎"
@@ -416,6 +431,7 @@ function Propositions({ dossierId, propositions }: { dossierId: string; proposit
 
   return (
     <Carte
+      id={ID_CARTE_PROPOSITIONS}
       titre="Propositions"
       sousTitre="Chaque version reste consultable, même refusée ou remplacée."
       emoji="📝"
@@ -491,6 +507,7 @@ function MutuelleEtTiersPayant({
 
   return (
     <Carte
+      id={ID_CARTE_MUTUELLE}
       titre="Mutuelle & tiers payant"
       sousTitre="Un flux suivi, pas un aller-retour de mails — jamais de reste à charge sans mutuelle vérifiée."
       emoji="🤝"
@@ -803,6 +820,7 @@ function CommandeEtLivraison({ propositions }: { propositions: PropositionAvecLi
 
   return (
     <Carte
+      id={ID_CARTE_COMMANDE_LIVRAISON}
       titre="Commande & livraison"
       sousTitre="Commander, réceptionner, contrôler et livrer — sans perte d'information entre chaque étape."
       emoji="📦"
@@ -1727,6 +1745,7 @@ function SAVCarte({ propositions }: { propositions: PropositionAvecLignes[] }) {
 
   return (
     <Carte
+      id={ID_CARTE_SAV}
       titre="SAV"
       sousTitre="Un incident après livraison, rattaché au dossier — jamais un nouveau dossier déconnecté."
       emoji="🛠️"
@@ -1994,6 +2013,7 @@ function ConsentementsRgpd({ personne }: { personne: Personne }) {
 
   return (
     <Carte
+      id={ID_CARTE_CONSENTEMENTS}
       titre="Consentements RGPD"
       sousTitre="Modifiables à tout moment par le client, horodatés à chaque changement."
       emoji="🔐"
@@ -2095,6 +2115,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
 
   return (
     <Carte
+      id={ID_CARTE_SYNTHESE_BESOIN}
       titre="Synthèse besoin (mini-audit vocal)"
       sousTitre="Généré par IA, éditable, jamais enregistré définitivement sans validation humaine explicite."
       emoji="🎙️"
@@ -2144,6 +2165,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
 function JournalEvenements({ evenements }: { evenements: Evenement[] }) {
   return (
     <Carte
+      id={ID_CARTE_JOURNAL}
       titre="Journal d'événements"
       sousTitre="Qui a fait quoi, quand — jamais de modification silencieuse."
       emoji="🕰️"
