@@ -23,6 +23,7 @@ import type {
 import type { PieceRequise } from "@/lib/completude";
 import { formaterPrix, parserPrixEnCentimes } from "@/lib/argent";
 import { garantieExpiree } from "@/lib/sav";
+import { useModeDemo } from "@/lib/modeDemo";
 import Carrousel from "@/components/Carrousel";
 
 type PersonneAvecRelations = Personne & {
@@ -94,14 +95,17 @@ export default function DossierDetailClient({
   completude,
   propositions,
   ventesDirectes,
-  estDirecteur,
+  estDirecteurReel,
+  estSuperAdminReel,
 }: {
   personne: PersonneAvecRelations;
   completude: PieceRequise[];
   propositions: PropositionAvecLignes[];
   ventesDirectes: CommandeAvecTout[];
-  estDirecteur: boolean;
+  estDirecteurReel: boolean;
+  estSuperAdminReel: boolean;
 }) {
+  const { estDirecteurAffiche } = useModeDemo(estSuperAdminReel, estDirecteurReel);
   const [idActif, setIdActif] = useState<string | null>(null);
   const [idsVisites, setIdsVisites] = useState<Set<string>>(new Set());
 
@@ -140,7 +144,7 @@ export default function DossierDetailClient({
           <SAVCarte propositions={propositions} />
           <ConsentementsRgpd personne={personne} />
           <SyntheseBesoin personne={personne} />
-          {estDirecteur && <JournalEvenements evenements={personne.evenements} />}
+          {estDirecteurAffiche && <JournalEvenements evenements={personne.evenements} />}
         </Carrousel>
       </div>
     </SurbrillanceContext.Provider>
