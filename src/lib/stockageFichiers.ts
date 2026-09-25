@@ -68,5 +68,18 @@ export async function lireFichier(cheminStockage: string): Promise<Buffer> {
   // configurable) — cet adaptateur local est de toute façon remplacé par un
   // client S3 avant la mise en production, voir docs/conformite-hds.md.
   const cheminAbsolu = path.join(/* turbopackIgnore: true */ DOSSIER_BASE, cheminNormalise);
-  return readFile(/* turbopackIgnore: true */ cheminAbsolu);
+  try {
+    return await readFile(/* turbopackIgnore: true */ cheminAbsolu);
+  } catch (e) {
+    if (e instanceof Error && "code" in e && e.code === "ENOENT") {
+      // Sans disque persistant (voir render.yaml > disk), le fichier peut
+      // avoir disparu lors d'un redéploiement alors que sa ligne Document
+      // reste en base (PostgreSQL, lui, persistant) — message clair plutôt
+      // que le chemin technique brut, à l'utilisateur comme à l'appelant.
+      throw new Error(
+        "Fichier introuvable sur le serveur — probablement perdu lors d'un redéploiement (stockage non persistant). Re-téléversez cette pièce.",
+      );
+    }
+    throw e;
+  }
 }
