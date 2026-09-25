@@ -210,6 +210,23 @@ model Ordonnance {
   finess     String? // FINESS du cabinet — 9 chiffres, validé avant stockage (lib/optique.ts)
   rpps       String? // RPPS du praticien, si présent sur l'ordonnance — 11 chiffres, validé avant stockage
 
+  // Adaptation par un opticien (décret du 27 mai 2016 : un opticien peut
+  // adapter une prescription existante dans certaines limites) — mêmes
+  // mesures que ci-dessus mais pour la correction adaptée, avec sa propre
+  // date. Tant que `dateModification` est renseignée, ce sont CES valeurs
+  // qui font foi (lib/optique.ts > valeursActives), jamais celles du
+  // médecin en même temps — jamais fusionnées champ par champ.
+  sphereOdModifiee   Float?
+  cylindreOdModifiee Float?
+  axeOdModifiee      Int?
+  additionOdModifiee Float?
+  sphereOgModifiee   Float?
+  cylindreOgModifiee Float?
+  axeOgModifiee      Int?
+  additionOgModifiee Float?
+  modifieePar        String? // nom de l'opticien ayant adapté la prescription
+  dateModification   DateTime?
+
   @@index([personneId])
 }
 
@@ -434,6 +451,14 @@ model DemandePriseEnCharge {
   // Renseignés uniquement à l'accord — jamais recalculés ailleurs.
   montantPriseEnChargeTTC Int?
   motifRefus              String?
+
+  // FINESS du cabinet et RPPS du praticien prescripteur — copiés depuis la
+  // dernière Ordonnance OPTIQUE du dossier au moment de la création de
+  // cette demande (instantané, comme PropositionLigne.prixUnitaireTTC :
+  // jamais recalculés après coup) — une mutuelle exige ces identifiants
+  // sur toute demande de prise en charge.
+  finess String?
+  rpps   String?
 
   @@index([propositionId])
   @@index([personneId])

@@ -92,3 +92,45 @@ export function validerFiness(valeur: unknown): string | null {
 export function validerRpps(valeur: unknown): string | null {
   return validerNumeroChiffres(valeur, 11);
 }
+
+export type OrdonnanceMesures = {
+  sphereOD: number | null;
+  cylindreOD: number | null;
+  axeOD: number | null;
+  additionOD: number | null;
+  sphereOG: number | null;
+  cylindreOG: number | null;
+  axeOG: number | null;
+  additionOG: number | null;
+  sphereOdModifiee: number | null;
+  cylindreOdModifiee: number | null;
+  axeOdModifiee: number | null;
+  additionOdModifiee: number | null;
+  sphereOgModifiee: number | null;
+  cylindreOgModifiee: number | null;
+  axeOgModifiee: number | null;
+  additionOgModifiee: number | null;
+  dateModification: Date | string | null;
+};
+
+/**
+ * Un opticien peut adapter une prescription existante dans certaines
+ * limites (décret du 27 mai 2016) — tant qu'une adaptation existe
+ * (`dateModification` renseignée), ce sont SES valeurs qui font foi dans
+ * tout le logiciel, jamais celles du médecin en même temps : pas de fusion
+ * champ par champ, un jeu de mesures complet remplace l'autre.
+ */
+export function valeursActives(o: OrdonnanceMesures): { od: MesureOeil; og: MesureOeil; source: "opticien" | "medecin" } {
+  if (o.dateModification) {
+    return {
+      od: { sphere: o.sphereOdModifiee, cylindre: o.cylindreOdModifiee, axe: o.axeOdModifiee, addition: o.additionOdModifiee },
+      og: { sphere: o.sphereOgModifiee, cylindre: o.cylindreOgModifiee, axe: o.axeOgModifiee, addition: o.additionOgModifiee },
+      source: "opticien",
+    };
+  }
+  return {
+    od: { sphere: o.sphereOD, cylindre: o.cylindreOD, axe: o.axeOD, addition: o.additionOD },
+    og: { sphere: o.sphereOG, cylindre: o.cylindreOG, axe: o.axeOG, addition: o.additionOG },
+    source: "medecin",
+  };
+}

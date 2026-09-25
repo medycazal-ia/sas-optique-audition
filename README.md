@@ -146,6 +146,18 @@ créées/corrigées (OCR ou saisie manuelle), et sert à l'autocomplétion
 (`GET /api/cabinets?q=...`) en cas d'OCR défaillant ou de création
 manuelle du dossier — plutôt que de tout retaper à chaque fois.
 
+Un opticien peut adapter une prescription existante dans certaines limites
+(décret du 27 mai 2016) : la carte Fiche permet de saisir cette adaptation
+(ses propres mesures OD/OG, sa date, l'opticien) séparément de la
+prescription du médecin — tant qu'elle existe, ce sont ses valeurs qui font
+foi partout dans le logiciel (`lib/optique.ts` > `valeursActives`), la
+prescription d'origine restant toujours consultable, jamais écrasée.
+
+Le FINESS et le RPPS du prescripteur sont recopiés (instantané, jamais
+recalculé) sur la demande de prise en charge dès qu'une proposition est
+acceptée (carte Mutuelle & tiers payant) — une mutuelle les exige sur
+toute demande de prise en charge.
+
 ## Conformité données de santé
 
 **Important, à lire avant toute mise en production** :

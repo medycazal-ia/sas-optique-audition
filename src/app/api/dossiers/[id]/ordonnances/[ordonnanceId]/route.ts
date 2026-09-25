@@ -29,6 +29,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const finess = validerFiness(body.finess);
   const rpps = validerRpps(body.rpps);
 
+  const modification = body.modification ?? {};
+  const dateModification =
+    typeof modification.dateModification === "string" && modification.dateModification
+      ? new Date(modification.dateModification)
+      : null;
+  const modifieePar =
+    typeof modification.modifieePar === "string" && modification.modifieePar.trim() ? modification.modifieePar.trim() : null;
+  const odModifiee = dateModification ? parserMesureOeil(modification.od) : { sphere: null, cylindre: null, axe: null, addition: null };
+  const ogModifiee = dateModification ? parserMesureOeil(modification.og) : { sphere: null, cylindre: null, axe: null, addition: null };
+
   const ordonnance = await prisma.ordonnance.update({
     where: { id: ordonnanceId },
     data: {
@@ -45,6 +55,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       cylindreOG: og.cylindre,
       axeOG: og.axe,
       additionOG: og.addition,
+      dateModification,
+      modifieePar,
+      sphereOdModifiee: odModifiee.sphere,
+      cylindreOdModifiee: odModifiee.cylindre,
+      axeOdModifiee: odModifiee.axe,
+      additionOdModifiee: odModifiee.addition,
+      sphereOgModifiee: ogModifiee.sphere,
+      cylindreOgModifiee: ogModifiee.cylindre,
+      axeOgModifiee: ogModifiee.axe,
+      additionOgModifiee: ogModifiee.addition,
       extraitParOcrA: null,
     },
   });
