@@ -35,6 +35,13 @@ services:
       # le second mécanisme (rôle SUPER_ADMIN attribué à la main en base).
       - key: SUPER_ADMIN_EMAILS
         sync: false
+      # Extraction OCR de l'ordonnance (carte Fiche) par IA de vision —
+      # clé personnelle à créer sur console.anthropic.com, jamais stockée
+      # dans ce fichier ni dans git. Sans cette clé, le bouton "Extraire de
+      # l'ordonnance" échoue proprement (message d'erreur clair) — le reste
+      # de l'application fonctionne normalement.
+      - key: ANTHROPIC_API_KEY
+        sync: false
 
 databases:
   - name: sas-optique-audition-db
