@@ -4,10 +4,13 @@ import { cookies } from "next/headers";
 import {
   NOM_COOKIE_SESSION,
   verifierJetonSession,
+  sessionEstSuperAdmin,
+  sessionEstDirecteurOuPlus,
   type SessionUtilisateur,
 } from "@/lib/session-edge";
 
 export type { SessionUtilisateur };
+export { sessionEstSuperAdmin, sessionEstDirecteurOuPlus };
 
 const DUREE_SESSION_SECONDES = 60 * 60 * 12; // 12h — poste de comptoir partagé, pas de session infinie.
 

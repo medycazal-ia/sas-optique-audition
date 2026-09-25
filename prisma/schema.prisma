@@ -23,25 +23,52 @@ datasource db {
 
 /// Compte collaborateur (comptoir, back-office). Authentification par
 /// email + mot de passe (hash bcrypt) — pas de gestion de compte client ici,
-/// uniquement le personnel du magasin.
+/// uniquement le personnel du magasin. Le profil complet (nom, prénom,
+/// contact perso, pseudo) est géré depuis la carte Utilisateurs (rôle
+/// DIRECTEUR et au-dessus) — nullable pour les comptes créés avant son
+/// existence, obligatoire pour toute création via cette carte.
 model Utilisateur {
-  id                 String          @id @default(cuid())
-  creeA              DateTime        @default(now())
-  email              String          @unique
-  nom                String
-  motDePasseHash     String
-  role               RoleUtilisateur @default(COLLABORATEUR)
-  actif              Boolean         @default(true)
+  id             String          @id @default(cuid())
+  creeA          DateTime        @default(now())
+  email          String          @unique
+  nom            String
+  prenom         String?
+  telephonePerso String?
+  pseudo         String?         @unique
+  motDePasseHash String
+  role           RoleUtilisateur @default(COLLABORATEUR)
+  actif          Boolean         @default(true)
+
+  // Bannissement : "pour faute", distinct d'une simple désactivation
+  // temporaire (actif=false). Bloque la connexion comme actif=false, mais
+  // trace explicitement le motif — jamais une simple case décochée sans
+  // justification. Réversible par un DIRECTEUR (ou plus), l'historique du
+  // bannissement reste néanmoins visible.
+  banni      Boolean   @default(false)
+  banniA     DateTime?
+  banniMotif String?
+  banniPar   String? // email de l'auteur du bannissement/débannissement
+
   derniereConnexionA DateTime?
+
+  @@index([role])
 }
 
-/// DIRECTEUR : accès à toutes les fonctions, sans restriction (ex. Journal
-/// d'événements, visible uniquement par ce rôle). D'autres rôles à accès
-/// restreint (ex. CONSEILLER) viendront s'ajouter plus tard, une fois leurs
-/// restrictions précisées.
+/// DIRECTEUR : accès à toutes les fonctions courantes de gestion (y compris
+/// la carte Utilisateurs), sans restriction. SUPER_ADMIN est un niveau
+/// au-dessus, réservé au fondateur et à qui il désigne : jamais attribuable
+/// depuis l'interface (aucune route API ne permet de définir ce rôle), donc
+/// jamais visible ni modifiable par un DIRECTEUR — seulement à la main, en
+/// accès direct à la base (ex. console SQL Render), en complément de la
+/// reconnaissance par email via la variable d'environnement
+/// SUPER_ADMIN_EMAILS (voir src/lib/session-edge.ts) : les deux mécanismes
+/// sont indépendants et redondants l'un de l'autre, à dessein. D'autres
+/// rôles à accès restreint (ex. CONSEILLER) viendront s'ajouter plus tard,
+/// une fois leurs restrictions précisées.
 enum RoleUtilisateur {
   COLLABORATEUR
   DIRECTEUR
+  SUPER_ADMIN
 }
 
 /// Journal d'audit : "chaque écriture significative génère un Événement

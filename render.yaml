@@ -27,6 +27,14 @@ services:
         value: production
       - key: SESSION_SECRET
         generateValue: true
+      # Carte Super Admin (src/app/super-admin) — liste d'emails séparés par
+      # des virgules reconnus super admin, indépendamment de tout rôle en
+      # base. `sync: false` : jamais stocké dans ce fichier ni dans git,
+      # réglable uniquement à la main depuis le tableau de bord Render par
+      # le fondateur — voir prisma/schema.prisma (enum RoleUtilisateur) pour
+      # le second mécanisme (rôle SUPER_ADMIN attribué à la main en base).
+      - key: SUPER_ADMIN_EMAILS
+        sync: false
 
 databases:
   - name: sas-optique-audition-db
