@@ -16,6 +16,7 @@ export default function NouveauDossierPage() {
 
     const form = new FormData(event.currentTarget);
     const payload = {
+      numeroSecuriteSociale: form.get("numeroSecuriteSociale") || undefined,
       civilite: form.get("civilite") || undefined,
       prenom: form.get("prenom"),
       nom: form.get("nom"),
@@ -60,6 +61,21 @@ export default function NouveauDossierPage() {
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-4 rounded-[28px] border border-neutral-200 bg-white p-6 shadow-lg">
+        <label className="block text-sm">
+          Numéro de sécurité sociale <span className="font-normal text-neutral-400">(optionnel)</span>
+          <input
+            name="numeroSecuriteSociale"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={21}
+            placeholder="1 85 12 75 108 111 42"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm tracking-wide"
+          />
+          <span className="mt-1 block text-xs text-neutral-500">
+            Non requis pour créer le dossier — certaines ventes comptoir n&apos;en disposent pas.
+          </span>
+        </label>
+
         <div className="grid grid-cols-[100px_1fr_1fr] gap-3">
           <label className="text-sm">
             Civilité

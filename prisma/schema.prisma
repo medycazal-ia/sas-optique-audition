@@ -78,10 +78,11 @@ model Personne {
   modifieA DateTime @updatedAt
 
   // État civil
-  civilite      String? // M. | Mme | autre — jamais obligatoire
-  prenom        String
-  nom           String
-  dateNaissance DateTime?
+  civilite              String? // M. | Mme | autre — jamais obligatoire
+  prenom                String
+  nom                   String
+  dateNaissance         DateTime?
+  numeroSecuriteSociale String? // NIR — optionnel (vente comptoir possible sans), sert aussi à la recherche
 
   // Coordonnées
   telephone  String?
@@ -126,6 +127,7 @@ model Personne {
 
   @@index([nom, prenom])
   @@index([foyerId])
+  @@index([numeroSecuriteSociale])
 }
 
 enum RoleAssure {
@@ -200,16 +202,16 @@ model Magasin {
 /// mise en cache : chaque changement crée une ligne HistoriquePrix plutôt que
 /// d'écraser silencieusement l'ancien prix (traçabilité en cas de litige).
 model Produit {
-  id          String        @id @default(cuid())
-  creeA       DateTime      @default(now())
-  modifieA    DateTime      @updatedAt
-  type        TypeProduit
-  reference   String        @unique
-  marque      String
-  modele      String
-  description String?
-  prixTTC     Int // en centimes — évite les erreurs d'arrondi flottant sur un prix
-  statut      StatutProduit @default(ACTIF)
+  id           String        @id @default(cuid())
+  creeA        DateTime      @default(now())
+  modifieA     DateTime      @updatedAt
+  type         TypeProduit
+  reference    String        @unique
+  marque       String
+  modele       String
+  description  String?
+  prixTTC      Int // en centimes — évite les erreurs d'arrondi flottant sur un prix
+  statut       StatutProduit @default(ACTIF)
   garantieMois Int? // durée de garantie constructeur, si connue — voir module SAV
 
   stocks            Stock[]
@@ -343,11 +345,11 @@ model PropositionLigne {
 /// "Chaque demande envoyée est visible avec son statut et son délai — pas de
 /// demande perdue faute de suivi" (critère d'acceptation V1).
 model DemandePriseEnCharge {
-  id            String              @id @default(cuid())
-  creeA         DateTime            @default(now())
-  modifieA      DateTime            @updatedAt
+  id            String                @id @default(cuid())
+  creeA         DateTime              @default(now())
+  modifieA      DateTime              @updatedAt
   propositionId String
-  proposition   Proposition         @relation(fields: [propositionId], references: [id])
+  proposition   Proposition           @relation(fields: [propositionId], references: [id])
   personneId    String
   statut        StatutDemandeMutuelle @default(A_ENVOYER)
   envoyeeA      DateTime?
@@ -391,19 +393,19 @@ enum StatutDemandeMutuelle {
 /// côté application plutôt que par contrainte SQL, comme le reste de ce
 /// schéma.
 model Commande {
-  id         String         @id @default(cuid())
-  creeA      DateTime       @default(now())
-  modifieA   DateTime       @updatedAt
-  propositionId String?
-  proposition   Proposition? @relation(fields: [propositionId], references: [id])
-  savId      String?        @unique
-  sav        SAV?           @relation(fields: [savId], references: [id])
-  personneId String
-  statut     StatutCommande @default(A_PASSER)
-  passeeA       DateTime?
-  confirmeeA    DateTime?
-  recueA        DateTime?
-  controleeA    DateTime?
+  id               String         @id @default(cuid())
+  creeA            DateTime       @default(now())
+  modifieA         DateTime       @updatedAt
+  propositionId    String?
+  proposition      Proposition?   @relation(fields: [propositionId], references: [id])
+  savId            String?        @unique
+  sav              SAV?           @relation(fields: [savId], references: [id])
+  personneId       String
+  statut           StatutCommande @default(A_PASSER)
+  passeeA          DateTime?
+  confirmeeA       DateTime?
+  recueA           DateTime?
+  controleeA       DateTime?
   delaiJoursEstime Int? // délai fournisseur communiqué au moment du passage
 
   lignes    CommandeLigne[]
@@ -442,13 +444,13 @@ model CommandeLigne {
 /// dossier" (critère d'acceptation V1) — jamais une simple note orale
 /// perdue après coup.
 model Livraison {
-  id         String          @id @default(cuid())
-  creeA      DateTime        @default(now())
-  modifieA   DateTime        @updatedAt
-  commandeId String          @unique
-  commande   Commande        @relation(fields: [commandeId], references: [id])
-  personneId String
-  statut     StatutLivraison @default(PROGRAMMEE)
+  id                 String          @id @default(cuid())
+  creeA              DateTime        @default(now())
+  modifieA           DateTime        @updatedAt
+  commandeId         String          @unique
+  commande           Commande        @relation(fields: [commandeId], references: [id])
+  personneId         String
+  statut             StatutLivraison @default(PROGRAMMEE)
   dateProgrammee     DateTime?
   remiseA            DateTime?
   ajustementDemande  String? // note d'ajustement/réglage demandé, tracée
@@ -488,17 +490,17 @@ enum StatutLivraison {
 /// "en impayé" (dossier-cadrage) est un état calculé (retard + solde > 0),
 /// pas persisté ici — même principe que l'alerte de délai de Commande.
 model Facture {
-  id           String        @id @default(cuid())
-  creeA        DateTime      @default(now())
-  modifieA     DateTime      @updatedAt
-  livraisonId  String        @unique
-  livraison    Livraison     @relation(fields: [livraisonId], references: [id])
-  personneId   String
-  statut       StatutFacture @default(EMISE)
-  montantTTC   Int // figé à l'émission, jamais recalculé
-  delaiPaiementJours Int    @default(30)
+  id                 String        @id @default(cuid())
+  creeA              DateTime      @default(now())
+  modifieA           DateTime      @updatedAt
+  livraisonId        String        @unique
+  livraison          Livraison     @relation(fields: [livraisonId], references: [id])
+  personneId         String
+  statut             StatutFacture @default(EMISE)
+  montantTTC         Int // figé à l'émission, jamais recalculé
+  delaiPaiementJours Int           @default(30)
   relanceEnvoyeeA    DateTime? // "un impayé après délai génère une tâche de relance visible" (critère V1)
-  notes        String?
+  notes              String?
 
   paiements Paiement[]
   avoirs    Avoir[]
@@ -556,22 +558,22 @@ model Avoir {
 /// plus une ligne précise (utile en audition : quel appareil exact, quel
 /// numéro de série).
 model SAV {
-  id         String     @id @default(cuid())
-  creeA      DateTime   @default(now())
-  modifieA   DateTime   @updatedAt
-  livraisonId String
-  livraison   Livraison @relation(fields: [livraisonId], references: [id])
+  id              String         @id @default(cuid())
+  creeA           DateTime       @default(now())
+  modifieA        DateTime       @updatedAt
+  livraisonId     String
+  livraison       Livraison      @relation(fields: [livraisonId], references: [id])
   commandeLigneId String?
   commandeLigne   CommandeLigne? @relation(fields: [commandeLigneId], references: [id])
-  personneId String
-  statut     StatutSAV  @default(OUVERT)
-  motif      String // description de l'incident (casse, gêne, panne, retour…)
+  personneId      String
+  statut          StatutSAV      @default(OUVERT)
+  motif           String // description de l'incident (casse, gêne, panne, retour…)
 
-  diagnostiqueA DateTime?
-  diagnostic    String?
-  decision      DecisionSAV?
-  garantieConstructeur Boolean @default(false)
-  garantieMagasin      Boolean @default(false)
+  diagnostiqueA        DateTime?
+  diagnostic           String?
+  decision             DecisionSAV?
+  garantieConstructeur Boolean      @default(false)
+  garantieMagasin      Boolean      @default(false)
 
   traitementA DateTime?
   clotureA    DateTime?

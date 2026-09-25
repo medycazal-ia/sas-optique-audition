@@ -106,6 +106,7 @@ function Carte({
 function InformationsPersonnelles({ personne }: { personne: Personne }) {
   const router = useRouter();
   const [champs, setChamps] = useState({
+    numeroSecuriteSociale: personne.numeroSecuriteSociale ?? "",
     telephone: personne.telephone ?? "",
     email: personne.email ?? "",
     adresse: personne.adresse ?? "",
@@ -140,6 +141,15 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
       degrade="from-orange-400 to-amber-500"
     >
       <div className="grid gap-3 sm:grid-cols-2">
+        <label className="text-sm sm:col-span-2">
+          Numéro de sécurité sociale <span className="font-normal text-neutral-400">(optionnel)</span>
+          <input
+            value={champs.numeroSecuriteSociale}
+            onChange={(e) => setChamps({ ...champs, numeroSecuriteSociale: e.target.value })}
+            inputMode="numeric"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm tracking-wide"
+          />
+        </label>
         <label className="text-sm">
           Téléphone
           <input
