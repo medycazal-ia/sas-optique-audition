@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
+import { lireSession } from "@/lib/auth";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -11,6 +12,7 @@ type RouteParams = { params: Promise<{ id: string }> };
  * est journalisé séparément des autres modifications du dossier.
  */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  const session = await lireSession();
   const { id } = await params;
   const body = await request.json();
 
@@ -40,6 +42,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     entite: "Personne",
     entiteId: id,
     personneId: id,
+    acteur: session?.email,
     donnees,
   });
 

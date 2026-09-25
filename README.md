@@ -24,8 +24,11 @@ Prérequis : Node.js 22+, PostgreSQL accessible (local ou distant).
 ```bash
 npm install
 
-# Copier .env.example en .env et ajuster DATABASE_URL si besoin
+# Copier .env.example en .env — ajuster DATABASE_URL, et générer un vrai
+# SESSION_SECRET :
 cp .env.example .env
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# → coller le résultat dans SESSION_SECRET de .env
 
 # Appliquer le schéma à la base
 npx prisma migrate deploy   # ou `npx prisma migrate dev` en développement
@@ -33,11 +36,14 @@ npx prisma migrate deploy   # ou `npx prisma migrate dev` en développement
 npm run dev
 ```
 
-Ouvrir [http://localhost:3000](http://localhost:3000) — la page d'accueil est
-un hub avec les 9 modules du dossier de cadrage sous forme de carrousel
-glissable (souris, trackpad ou tactile) ; seul **Dossier client** est
-fonctionnel, les 8 autres ouvrent une page d'aperçu (objectif + périmètre)
-en attendant leur lot de réalisation.
+Ouvrir [http://localhost:3000](http://localhost:3000). Le module Dossier
+client est protégé par authentification : la première visite sur
+`/dossiers` redirige vers `/connexion` ; tant qu'aucun compte n'existe,
+un lien y renvoie vers `/premiere-connexion` pour créer le premier compte
+(administrateur). La page d'accueil (`/`) reste un hub public avec les 9
+modules du dossier de cadrage sous forme de carrousel glissable — seul
+**Dossier client** est fonctionnel, les 8 autres ouvrent une page d'aperçu
+(objectif + périmètre) en attendant leur lot de réalisation.
 
 ## Déploiement d'une démo
 
@@ -49,14 +55,21 @@ données de client, voir d'abord `docs/conformite-hds.md`.
 ## Structure
 
 ```
-prisma/schema.prisma           Modèle de données (Lot 0 + Lot 1)
+prisma/schema.prisma           Modèle de données (Lot 0 + Lot 1 + comptes)
 src/lib/prisma.ts              Client Prisma partagé
+src/lib/auth.ts                Hash mot de passe, création/lecture de session
+src/lib/session-edge.ts        Vérification de session compatible proxy (edge)
+src/lib/stockageFichiers.ts    Stockage des documents (local en dev, à remplacer par S3 en prod)
 src/lib/evenements.ts          Journal d'audit (Événement)
 src/lib/completude.ts          Calcul de complétude du dossier
 src/lib/modules.ts             Métadonnées des 9 modules (hub d'accueil)
 src/components/Carrousel.tsx   Carrousel glissable réutilisable
+src/proxy.ts                   Protection des routes /dossiers et /api/dossiers (auth)
 src/app/                       Hub d'accueil + pages d'aperçu des modules
+src/app/connexion/             Page de connexion
+src/app/premiere-connexion/    Création du tout premier compte (admin)
 src/app/dossiers/              UI module Dossier client
+src/app/api/auth/              Connexion, déconnexion, amorçage du premier compte
 src/app/api/dossiers/          API du module Dossier client
 docs/dossier-cadrage.md        Dossier de cadrage complet (spécification)
 docs/conformite-hds.md         Notes de conformité données de santé (à lire avant la prod)

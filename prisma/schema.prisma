@@ -1,12 +1,14 @@
-// Schéma de données transverse (Lot 0) + module Dossier client (Lot 1).
-// Source : docs/dossier-cadrage.md > "Modèle de données" et "Module — Dossier client".
+// Schéma de données transverse (Lot 0) + module Dossier client (Lot 1) +
+// module Produits & catalogue (Lot 2, optique V1).
+// Source : docs/dossier-cadrage.md > "Modèle de données" et modules
+// "Dossier client" / "Produits & catalogue".
 //
 // Principe directeur du dossier de cadrage : un dossier client unique relie
 // tout (santé, commerce, mutuelle, commande, livraison, finance, service).
 // Les entités des modules non encore réalisés (Proposition, Commande, Facture,
 // SAV, ...) ne sont donc PAS créées ici tant que leur lot n'est pas lancé —
-// seules les entités du Lot 0 (fondations) et du Lot 1 (Dossier client) le sont,
-// pour ne pas figer un schéma sur des modules non spécifiés en détail.
+// seules les entités des lots déjà réalisés le sont, pour ne pas figer un
+// schéma sur des modules non spécifiés en détail.
 
 generator client {
   provider = "prisma-client-js"
@@ -18,6 +20,25 @@ datasource db {
 }
 
 // --- Fondations transverses (Lot 0) ----------------------------------------
+
+/// Compte collaborateur (comptoir, back-office). Authentification par
+/// email + mot de passe (hash bcrypt) — pas de gestion de compte client ici,
+/// uniquement le personnel du magasin.
+model Utilisateur {
+  id                 String          @id @default(cuid())
+  creeA              DateTime        @default(now())
+  email              String          @unique
+  nom                String
+  motDePasseHash     String
+  role               RoleUtilisateur @default(COLLABORATEUR)
+  actif              Boolean         @default(true)
+  derniereConnexionA DateTime?
+}
+
+enum RoleUtilisateur {
+  COLLABORATEUR
+  ADMIN
+}
 
 /// Journal d'audit : "chaque écriture significative génère un Événement
 /// journalisé — jamais de modification silencieuse" (modèle de données).
@@ -85,14 +106,23 @@ model Personne {
   consentementSms    Boolean   @default(false)
   consentementSmsA   DateTime?
 
+  // Mutuelle — voir module Mutuelle & tiers payant. mutuelleRefuseeA trace un
+  // refus explicite du client de la renseigner (le blocage du reste à charge
+  // ne s'applique alors plus, mais le refus reste tracé).
+  mutuelleNom            String?
+  mutuelleNumeroAdherent String?
+  mutuelleRenseigneeA    DateTime?
+  mutuelleRefuseeA       DateTime?
+
   // Mini-audit vocal : synthèse IA, jamais actée sans validation humaine explicite.
   syntheseBesoin           String? // texte libre généré par IA puis édité par l'humain
   syntheseBesoinValideeA   DateTime? // horodatage de la validation humaine — null tant que non validée
   syntheseBesoinValideePar String? // qui a validé
 
-  documents   Document[]
-  ordonnances Ordonnance[]
-  evenements  Evenement[]
+  documents    Document[]
+  ordonnances  Ordonnance[]
+  evenements   Evenement[]
+  propositions Proposition[]
 
   @@index([nom, prenom])
   @@index([foyerId])
@@ -148,4 +178,424 @@ enum TypeDocument {
   JUSTIFICATIF
   DEVIS_SIGNE
   AUTRE
+}
+
+// --- Module Produits & catalogue (Lot 2, optique V1) ------------------------
+// Source : docs/dossier-cadrage.md > "Module — Produits & catalogue".
+// "Donner accès, au moment de composer une proposition, à des produits réels
+// et disponibles — jamais à une promesse théorique déconnectée du stock ou du
+// tarif fournisseur du jour."
+
+/// Point de vente — nécessaire pour le stock multi-magasin (référence marché
+/// MyEasyOptic citée dans docs/dossier-cadrage.md).
+model Magasin {
+  id     String  @id @default(cuid())
+  nom    String
+  ville  String?
+  stocks Stock[]
+}
+
+/// Article catalogue : monture, verre, lentille ou accessoire (V1 optique).
+/// Le tarif courant (prixTTC) est toujours celui affiché — jamais une valeur
+/// mise en cache : chaque changement crée une ligne HistoriquePrix plutôt que
+/// d'écraser silencieusement l'ancien prix (traçabilité en cas de litige).
+model Produit {
+  id          String        @id @default(cuid())
+  creeA       DateTime      @default(now())
+  modifieA    DateTime      @updatedAt
+  type        TypeProduit
+  reference   String        @unique
+  marque      String
+  modele      String
+  description String?
+  prixTTC     Int // en centimes — évite les erreurs d'arrondi flottant sur un prix
+  statut      StatutProduit @default(ACTIF)
+  garantieMois Int? // durée de garantie constructeur, si connue — voir module SAV
+
+  stocks            Stock[]
+  historiquePrix    HistoriquePrix[]
+  lignesProposition PropositionLigne[]
+  lignesCommande    CommandeLigne[]
+
+  @@index([type])
+  @@index([marque])
+}
+
+enum TypeProduit {
+  MONTURE
+  VERRE
+  LENTILLE
+  ACCESSOIRE
+}
+
+enum StatutProduit {
+  ACTIF
+  RUPTURE
+  DISCONTINUE
+}
+
+/// Disponibilité d'un produit par magasin. "La disponibilité multi-magasin
+/// est consultable avant de promettre un délai au client" (critère
+/// d'acceptation V1). delaiJoursReappro renseigné quand quantite = 0, pour
+/// donner un délai réaliste plutôt qu'une simple rupture sans horizon.
+model Stock {
+  id                String   @id @default(cuid())
+  modifieA          DateTime @updatedAt
+  produitId         String
+  produit           Produit  @relation(fields: [produitId], references: [id])
+  magasinId         String
+  magasin           Magasin  @relation(fields: [magasinId], references: [id])
+  quantite          Int      @default(0)
+  quantiteReservee  Int      @default(0) // engagée sur une proposition en cours, pas encore livrée
+  delaiJoursReappro Int? // renseigné si quantite = 0 : délai fournisseur estimé
+
+  @@unique([produitId, magasinId])
+  @@index([magasinId])
+}
+
+/// Historique de prix — jamais écrasé, pour pouvoir justifier a posteriori le
+/// tarif affiché à un client à une date donnée.
+model HistoriquePrix {
+  id         String   @id @default(cuid())
+  effectifA  DateTime @default(now())
+  produitId  String
+  produit    Produit  @relation(fields: [produitId], references: [id])
+  prixTTC    Int
+  modifiePar String? // email de l'utilisateur ayant changé le prix
+
+  @@index([produitId])
+}
+
+// --- Module Devis & proposition (Lot 3) --------------------------------------
+// Source : docs/dossier-cadrage.md > "Module — Devis & proposition".
+// "Composer une proposition adaptée au besoin et au budget, en gardant la
+// trace de TOUTES les versions, alternatives et du choix final — jamais un
+// simple document qui écrase le précédent."
+
+/// Une proposition n'est jamais supprimée, même refusée ou remplacée — elle
+/// reste consultable dans l'historique du dossier (critère d'acceptation V1).
+/// "remplace" trace explicitement qu'une nouvelle version succède à une
+/// proposition précédente, sans effacer celle-ci.
+model Proposition {
+  id           String            @id @default(cuid())
+  creeA        DateTime          @default(now())
+  modifieA     DateTime          @updatedAt
+  personneId   String
+  personne     Personne          @relation(fields: [personneId], references: [id])
+  statut       StatutProposition @default(BROUILLON)
+  envoyeeA     DateTime?
+  decideeA     DateTime?
+  notes        String?
+  cent100Sante Boolean           @default(false) // dispositif réglementé optique — voir docs/dossier-cadrage.md
+
+  // Reste à charge réel, mis à jour uniquement par un accord de prise en
+  // charge mutuelle (module Mutuelle & tiers payant) — jamais recalculé
+  // silencieusement ailleurs. Nul tant qu'aucun accord n'a été enregistré.
+  resteAChargeTTC Int?
+
+  remplaceId   String?      @unique
+  remplace     Proposition? @relation("VersionProposition", fields: [remplaceId], references: [id])
+  remplaceePar Proposition? @relation("VersionProposition")
+
+  lignes    PropositionLigne[]
+  demandes  DemandePriseEnCharge[]
+  commandes Commande[]
+
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutProposition {
+  BROUILLON
+  ENVOYEE
+  ACCEPTEE
+  REFUSEE
+  EXPIREE
+}
+
+/// Ligne de proposition. prixUnitaireTTC et libelleProduit sont un instantané
+/// pris au moment de l'ajout : le tarif catalogue peut changer après coup
+/// (HistoriquePrix), mais la proposition déjà composée garde le prix promis
+/// au client à cet instant précis — jamais recalculé rétroactivement.
+model PropositionLigne {
+  id              String      @id @default(cuid())
+  creeA           DateTime    @default(now())
+  propositionId   String
+  proposition     Proposition @relation(fields: [propositionId], references: [id])
+  produitId       String
+  produit         Produit     @relation(fields: [produitId], references: [id])
+  libelleProduit  String // instantané "marque modèle" au moment de l'ajout
+  quantite        Int         @default(1)
+  prixUnitaireTTC Int // instantané, en centimes
+
+  @@index([propositionId])
+}
+
+// --- Module Mutuelle & tiers payant (Lot 4) ----------------------------------
+// Source : docs/dossier-cadrage.md > "Module — Mutuelle & tiers payant".
+// "Remplacer les échanges manuels par mail/téléphone avec les mutuelles par
+// un flux suivi et tracé — plutôt qu'une découverte du problème à
+// l'encaissement." La télétransmission réelle (portail tiers, DRE) n'est PAS
+// intégrée ici : la faisabilité technique n'a pas été vérifiée (voir le
+// "Point d'attention" du module). Ce lot trace le flux manuellement.
+
+/// Demande de prise en charge, déclenchée à l'acceptation d'une Proposition.
+/// "Chaque demande envoyée est visible avec son statut et son délai — pas de
+/// demande perdue faute de suivi" (critère d'acceptation V1).
+model DemandePriseEnCharge {
+  id            String              @id @default(cuid())
+  creeA         DateTime            @default(now())
+  modifieA      DateTime            @updatedAt
+  propositionId String
+  proposition   Proposition         @relation(fields: [propositionId], references: [id])
+  personneId    String
+  statut        StatutDemandeMutuelle @default(A_ENVOYER)
+  envoyeeA      DateTime?
+  reponseA      DateTime?
+
+  // Renseignés uniquement à l'accord — jamais recalculés ailleurs.
+  montantPriseEnChargeTTC Int?
+  motifRefus              String?
+
+  @@index([propositionId])
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutDemandeMutuelle {
+  A_ENVOYER
+  ENVOYEE
+  EN_ATTENTE
+  ACCORD
+  REFUS
+}
+
+// --- Module Commande & livraison (Lot 5) -------------------------------------
+// Source : docs/dossier-cadrage.md > "Module — Commande & livraison".
+// "Faire exister, une fois une proposition acceptée (et l'accord mutuelle
+// obtenu quand nécessaire), une chaîne commande → réception → contrôle →
+// remise au client → ajustement, sans perte d'information entre chaque
+// étape." Les flux fournisseurs réels (format de commande, suivi
+// transporteur) ne sont PAS intégrés — comme pour la mutuelle, la
+// faisabilité par fournisseur n'a pas été vérifiée. Ce lot trace la chaîne
+// manuellement.
+
+/// "Aucune commande ne peut être passée sans proposition acceptée liée"
+/// (critère d'acceptation V1). Les lignes sont un instantané des lignes de
+/// la proposition au moment du passage de commande (même principe que
+/// PropositionLigne : jamais recalculées après coup).
+/// propositionId et savId sont tous deux optionnels mais mutuellement
+/// significatifs : une commande née d'une vente porte propositionId (V1 des
+/// lots 3-6), une commande de remplacement née d'un échange SAV porte savId
+/// à la place (voir module SAV, Lot 7) — jamais les deux à la fois, vérifié
+/// côté application plutôt que par contrainte SQL, comme le reste de ce
+/// schéma.
+model Commande {
+  id         String         @id @default(cuid())
+  creeA      DateTime       @default(now())
+  modifieA   DateTime       @updatedAt
+  propositionId String?
+  proposition   Proposition? @relation(fields: [propositionId], references: [id])
+  savId      String?        @unique
+  sav        SAV?           @relation(fields: [savId], references: [id])
+  personneId String
+  statut     StatutCommande @default(A_PASSER)
+  passeeA       DateTime?
+  confirmeeA    DateTime?
+  recueA        DateTime?
+  controleeA    DateTime?
+  delaiJoursEstime Int? // délai fournisseur communiqué au moment du passage
+
+  lignes    CommandeLigne[]
+  livraison Livraison?
+
+  @@index([propositionId])
+  @@index([savId])
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutCommande {
+  A_PASSER
+  PASSEE
+  CONFIRMEE
+  RECUE
+  CONTROLEE
+}
+
+model CommandeLigne {
+  id             String   @id @default(cuid())
+  commandeId     String
+  commande       Commande @relation(fields: [commandeId], references: [id])
+  produitId      String
+  produit        Produit  @relation(fields: [produitId], references: [id])
+  libelleProduit String // instantané, comme PropositionLigne
+  quantite       Int      @default(1)
+  numeroSerie    String? // renseigné au contrôle — utile pour les appareils auditifs
+
+  savs SAV[]
+
+  @@index([commandeId])
+}
+
+/// "Un ajustement fait au moment de la remise est enregistré dans le
+/// dossier" (critère d'acceptation V1) — jamais une simple note orale
+/// perdue après coup.
+model Livraison {
+  id         String          @id @default(cuid())
+  creeA      DateTime        @default(now())
+  modifieA   DateTime        @updatedAt
+  commandeId String          @unique
+  commande   Commande        @relation(fields: [commandeId], references: [id])
+  personneId String
+  statut     StatutLivraison @default(PROGRAMMEE)
+  dateProgrammee     DateTime?
+  remiseA            DateTime?
+  ajustementDemande  String? // note d'ajustement/réglage demandé, tracée
+  ajustementDemandeA DateTime?
+  clotureeA          DateTime?
+
+  facture Facture?
+  savs    SAV[]
+
+  @@index([commandeId])
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutLivraison {
+  PROGRAMMEE
+  REMISE
+  AJUSTEMENT_DEMANDE
+  CLOTUREE
+}
+
+// --- Module Facturation & financement (Lot 6, V1 hors financement/crédit) ---
+// Source : docs/dossier-cadrage.md > "Module — Facturation & financement".
+// "Solder financièrement un dossier — acompte, encaissement, facture, avoir,
+// impayé, relance — sans perdre le lien avec le client ni avec le reste du
+// dossier." Le financement/paiement fractionné (V1.1) est explicitement
+// reporté par le cadrage — cadre réglementaire du crédit à la consommation à
+// valider avec un juriste avant réalisation. Le terminal de paiement réel et
+// l'export comptabilité ne sont PAS intégrés ici (même limite que les lots
+// précédents : faisabilité non vérifiée).
+
+/// "Une facture reprend automatiquement le reste à charge validé par le
+/// module Mutuelle — aucun recalcul manuel" (critère d'acceptation V1) :
+/// montantTTC est figé à l'émission depuis Proposition.resteAChargeTTC (ou
+/// le total de la proposition si aucune mutuelle n'est intervenue), jamais
+/// modifiable ensuite — seul un Avoir peut corriger un montant après coup.
+/// "en impayé" (dossier-cadrage) est un état calculé (retard + solde > 0),
+/// pas persisté ici — même principe que l'alerte de délai de Commande.
+model Facture {
+  id           String        @id @default(cuid())
+  creeA        DateTime      @default(now())
+  modifieA     DateTime      @updatedAt
+  livraisonId  String        @unique
+  livraison    Livraison     @relation(fields: [livraisonId], references: [id])
+  personneId   String
+  statut       StatutFacture @default(EMISE)
+  montantTTC   Int // figé à l'émission, jamais recalculé
+  delaiPaiementJours Int    @default(30)
+  relanceEnvoyeeA    DateTime? // "un impayé après délai génère une tâche de relance visible" (critère V1)
+  notes        String?
+
+  paiements Paiement[]
+  avoirs    Avoir[]
+
+  @@index([livraisonId])
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutFacture {
+  EMISE
+  PAYEE_PARTIELLEMENT
+  SOLDEE
+}
+
+/// "Chaque encaissement est un événement daté, jamais une simple mise à
+/// jour d'un solde" (dossier-cadrage) — append-only, jamais modifié.
+model Paiement {
+  id         String   @id @default(cuid())
+  creeA      DateTime @default(now())
+  factureId  String
+  facture    Facture  @relation(fields: [factureId], references: [id])
+  montantTTC Int
+  moyen      String? // espèces, CB, chèque… texte libre en V1 (pas de terminal intégré)
+
+  @@index([factureId])
+}
+
+/// "Un avoir reste lié à la facture d'origine — jamais un document
+/// indépendant" (critère d'acceptation V1).
+model Avoir {
+  id         String   @id @default(cuid())
+  creeA      DateTime @default(now())
+  factureId  String
+  facture    Facture  @relation(fields: [factureId], references: [id])
+  montantTTC Int
+  motif      String?
+
+  @@index([factureId])
+}
+
+// --- Module SAV (Lot 7) -------------------------------------------------------
+// Source : docs/dossier-cadrage.md > "Module — SAV". "Traiter un incident
+// après livraison (casse, gêne, panne d'appareil auditif, retour) en le
+// rattachant au dossier et à la livraison d'origine, plutôt que comme un
+// nouveau dossier déconnecté." Reporté après la V1 dans le cadrage
+// d'origine faute d'historique réel de livraisons — les Lots 5 et 6 en
+// produisent désormais un, ce module peut donc être réalisé. Le suivi
+// garantie fournisseur réel (portail, conditions par contrat) n'est PAS
+// intégré — même limite que les lots précédents.
+
+/// "Un SAV référence toujours une Livraison ou un Produit existant du
+/// dossier — pas de saisie libre déconnectée" (critère d'acceptation V1) :
+/// structurel ici, jamais un SAV sans Livraison. commandeLigneId cible en
+/// plus une ligne précise (utile en audition : quel appareil exact, quel
+/// numéro de série).
+model SAV {
+  id         String     @id @default(cuid())
+  creeA      DateTime   @default(now())
+  modifieA   DateTime   @updatedAt
+  livraisonId String
+  livraison   Livraison @relation(fields: [livraisonId], references: [id])
+  commandeLigneId String?
+  commandeLigne   CommandeLigne? @relation(fields: [commandeLigneId], references: [id])
+  personneId String
+  statut     StatutSAV  @default(OUVERT)
+  motif      String // description de l'incident (casse, gêne, panne, retour…)
+
+  diagnostiqueA DateTime?
+  diagnostic    String?
+  decision      DecisionSAV?
+  garantieConstructeur Boolean @default(false)
+  garantieMagasin      Boolean @default(false)
+
+  traitementA DateTime?
+  clotureA    DateTime?
+  noteCloture String?
+
+  /// "Un SAV clôturé par un échange déclenche automatiquement une nouvelle
+  /// Commande si nécessaire" (critère d'acceptation V1) — commande de
+  /// remplacement, jamais rattachée à une proposition (voir Commande).
+  commandeRemplacement Commande?
+
+  @@index([livraisonId])
+  @@index([personneId])
+  @@index([statut])
+}
+
+enum StatutSAV {
+  OUVERT
+  DIAGNOSTIQUE
+  EN_TRAITEMENT
+  CLOTURE
+}
+
+enum DecisionSAV {
+  REPARATION
+  ECHANGE
+  REMBOURSEMENT
 }

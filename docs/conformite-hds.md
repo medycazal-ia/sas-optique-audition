@@ -32,39 +32,56 @@ sécurisé" ne veut pas dire "certifié HDS").
   managé chez un hébergeur certifié HDS ne demande aucun changement de
   code, seulement de changer cette variable et de rejouer les migrations
   Prisma (`npx prisma migrate deploy`).
+- **Authentification réelle** (`src/lib/auth.ts`, `middleware.ts`) : compte
+  collaborateur (email + mot de passe, hash bcrypt), session signée en
+  cookie httpOnly (JWT, 12h), `/dossiers/**` et `/api/dossiers/**`
+  inaccessibles sans session valide. Premier compte créé via
+  `/premiere-connexion` (endpoint qui se ferme dès qu'un compte existe).
+  Le journal d'audit (`Evenement.acteur`) enregistre désormais l'email réel
+  de l'utilisateur authentifié, plus une valeur libre non vérifiée.
+- **Stockage de fichiers réel** (`src/lib/stockageFichiers.ts`) : les pièces
+  téléversées (carte Vitale, ordonnance...) sont de vrais fichiers stockés
+  et téléchargeables (`/api/dossiers/:id/documents/:documentId/telecharger`,
+  protégé par la même authentification), pas seulement des métadonnées.
+  L'adaptateur actuel écrit sur disque local (dev/démo) — un seul fichier à
+  remplacer par un client S3-compatible pour basculer vers le stockage de
+  l'hébergeur HDS, sans toucher au reste du code.
+- **Avertissement chiffrement en transit** (`src/lib/prisma.ts`) : en
+  production, un avertissement au démarrage si `DATABASE_URL` ne contient
+  pas `sslmode=require` — pour ne pas oublier ce point au moment du
+  changement d'hébergeur.
 - **Journal d'audit systématique** (`Evenement`) : qui a fait quoi, quand,
   sur quelle entité — exigence typique d'un référentiel HDS (traçabilité
   des accès et modifications).
 - **Consentements RGPD horodatés et modifiables** (`consentementEmail`,
   `consentementSms` + horodatage) sur l'entité `Personne`.
 - **Validation humaine obligatoire** avant d'acter une synthèse générée par
-  IA (`syntheseBesoinValideeA` / `syntheseBesoinValideePar`) — aucune
-  décision automatique n'est actée silencieusement.
-- **Stockage de documents découplé** : `Document.cheminStockage` est une
-  référence abstraite, pas un chemin de fichier local — brancher un
-  stockage objet S3-compatible chez l'hébergeur HDS retenu est un
-  changement localisé (un seul module d'accès aux fichiers à écrire),
-  pas une refonte du schéma de données.
+  IA (`syntheseBesoinValideeA` / `syntheseBesoinValideePar`) — la
+  validation est désormais liée au compte authentifié qui l'effectue,
+  aucune décision automatique n'est actée silencieusement.
 
 ## Ce qui reste à faire avant la production
 
 1. **Choisir un hébergeur certifié HDS** pour PostgreSQL et le stockage de
    documents (ex. Clever Cloud, Scaleway, OVHcloud Healthcare — à valider
    sur la liste officielle ANS, les offres et prix évoluent).
-2. **Chiffrement** : chiffrement au repos (généralement fourni par
-   l'hébergeur managé HDS) et en transit (TLS sur `DATABASE_URL`, à activer
-   en ajoutant `?sslmode=require` en production).
-3. **Authentification et contrôle d'accès** : ce Lot 1 n'implémente pas
-   encore d'authentification utilisateur — indispensable avant toute donnée
-   réelle de patient/client (actuellement, `acteur` dans le journal
-   d'événements est une valeur libre, pas liée à un compte authentifié).
-4. **Sauvegardes et plan de reprise** : à définir avec l'hébergeur retenu.
-5. **Registre des traitements et analyse d'impact (AIPD/PIA)** RGPD — à
+2. **Activer réellement le chiffrement en transit** : ajouter
+   `?sslmode=require` à `DATABASE_URL` en production (l'avertissement au
+   démarrage le rappelle, mais rien ne le fait automatiquement).
+3. **Basculer le stockage de fichiers vers S3-compatible** chez l'hébergeur
+   HDS retenu — `src/lib/stockageFichiers.ts` est le seul fichier à
+   modifier (même signature de fonctions).
+4. **Gestion des comptes** : pour l'instant, créer un compte au-delà du
+   premier admin se fait uniquement en base (pas encore d'écran
+   "inviter un collaborateur" ni de réinitialisation de mot de passe —
+   acceptable pour une petite équipe en V1, à revoir si l'équipe grandit).
+5. **Sauvegardes et plan de reprise** : à définir avec l'hébergeur retenu.
+6. **Registre des traitements et analyse d'impact (AIPD/PIA)** RGPD — à
    mener avec un DPO/juriste, en particulier pour le mini-audit vocal
    (données de santé + enregistrement vocal).
-6. **Contrat/DPA avec l'hébergeur** et, le cas échéant, avec les
+7. **Contrat/DPA avec l'hébergeur** et, le cas échéant, avec les
    sous-traitants (transcription vocale, signature électronique, etc.
    mentionnés dans `docs/dossier-cadrage.md`).
 
 Aucune donnée réelle de client ne devrait être saisie dans ce projet tant
-que les points 1 à 4 ci-dessus ne sont pas réglés.
+que les points 1 à 3 ci-dessus ne sont pas réglés.

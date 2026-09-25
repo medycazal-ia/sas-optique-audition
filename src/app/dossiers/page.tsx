@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import BarreUtilisateur from "@/components/BarreUtilisateur";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,10 @@ export default async function ListeDossiersPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-      <div className="flex items-center justify-between">
+      <div className="flex justify-end">
+        <BarreUtilisateur />
+      </div>
+      <div className="mt-2 flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-widest text-orange-500">Dossier client</p>
           <h1 className="text-3xl font-extrabold text-neutral-900">Tous les dossiers</h1>
