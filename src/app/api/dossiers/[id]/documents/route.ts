@@ -3,7 +3,7 @@ import type { TypeDocument } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
-import { enregistrerFichier } from "@/lib/stockageFichiers";
+import { enregistrerFichier, supprimerFichier } from "@/lib/stockageFichiers";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -79,4 +79,58 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   });
 
   return NextResponse.json(document, { status: 201 });
+}
+
+/**
+ * DELETE /api/dossiers/:id/documents — remet une pièce de la carte Santé à
+ * "non fournie" (bascule inverse de POST) : supprime toutes les pièces de
+ * ce type pour ce dossier, avec leur fichier réel s'il y en avait un. Une
+ * ordonnance liée à la pièce supprimée (dateExpiration, praticien…) est
+ * elle aussi retirée — sans quoi son suivi de péremption resterait rattaché
+ * à une pièce qu'on vient de dire ne plus avoir.
+ */
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  const session = await lireSession();
+  const { id } = await params;
+  const body = await request.json().catch(() => ({}));
+  const type = body.type;
+
+  if (!type || !TYPES_VALIDES.includes(type as TypeDocument)) {
+    return NextResponse.json(
+      { erreur: `type doit être l'un de : ${TYPES_VALIDES.join(", ")}` },
+      { status: 400 },
+    );
+  }
+  const typeValide = type as TypeDocument;
+
+  const documents = await prisma.$transaction(async (tx) => {
+    const trouves = await tx.document.findMany({
+      where: { personneId: id, type: typeValide },
+      include: { ordonnance: true },
+    });
+    for (const document of trouves) {
+      if (document.ordonnance) {
+        await tx.ordonnance.delete({ where: { id: document.ordonnance.id } });
+      }
+    }
+    await tx.document.deleteMany({ where: { personneId: id, type: typeValide } });
+    return trouves;
+  });
+
+  for (const document of documents) {
+    if (!document.cheminStockage.startsWith("verifie-sans-scan/")) {
+      await supprimerFichier(document.cheminStockage);
+    }
+  }
+
+  await journaliser({
+    type: "document.retire",
+    entite: "Personne",
+    entiteId: id,
+    personneId: id,
+    acteur: session?.email,
+    donnees: { type, nombreSupprime: documents.length },
+  });
+
+  return NextResponse.json({ supprime: documents.length });
 }

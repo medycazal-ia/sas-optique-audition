@@ -33,12 +33,27 @@ export async function enregistrerFichier(
 
 /**
  * Supprime tous les fichiers d'une personne (un dossier par personne, voir
- * enregistrerFichier). Seul cas où l'appli supprime des fichiers déjà
- * enregistrés — réservé à la réinitialisation des données démo.
+ * enregistrerFichier) — réservé à la réinitialisation des données démo.
  */
 export async function supprimerFichiersPersonne(personneId: string): Promise<void> {
   const cheminAbsolu = path.join(DOSSIER_BASE, personneId);
   await rm(cheminAbsolu, { recursive: true, force: true });
+}
+
+/**
+ * Supprime un seul fichier déjà enregistré — utilisé quand une pièce de la
+ * carte Santé est remise à "non fournie" après avoir été scannée. Même
+ * garde anti-traversée de répertoire que lireFichier ; `force: true`
+ * absorbe un fichier déjà absent (ex. une pièce "vérifiée sans scan", qui
+ * n'a jamais eu de fichier réel) sans faire échouer l'appelant.
+ */
+export async function supprimerFichier(cheminStockage: string): Promise<void> {
+  const cheminNormalise = path.normalize(cheminStockage);
+  if (cheminNormalise.startsWith("..") || path.isAbsolute(cheminNormalise)) {
+    throw new Error("Chemin de stockage invalide.");
+  }
+  const cheminAbsolu = path.join(/* turbopackIgnore: true */ DOSSIER_BASE, cheminNormalise);
+  await rm(/* turbopackIgnore: true */ cheminAbsolu, { force: true });
 }
 
 export async function lireFichier(cheminStockage: string): Promise<Buffer> {
