@@ -33,6 +33,7 @@ const CHAMPS_MODIFIABLES = [
   "civilite",
   "prenom",
   "nom",
+  "numeroSecuriteSociale",
   "telephone",
   "email",
   "adresse",
