@@ -222,7 +222,7 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
   return (
     <Carte
       id={ID_CARTE_COORDONNEES}
-      titre="Coordonnées"
+      titre="Client"
       sousTitre="Lues par les modules Devis, Mutuelle et Facturation — jamais ressaisies ailleurs."
       emoji="📇"
       degrade="from-orange-400 to-amber-500"
@@ -340,7 +340,7 @@ function Completude({
   return (
     <Carte
       id={ID_CARTE_COMPLETUDE}
-      titre="Complétude du dossier"
+      titre="Santé"
       sousTitre="Pièce suivante à fournir, plutôt qu'un formulaire libre."
       emoji="📎"
       degrade="from-emerald-400 to-teal-500"
