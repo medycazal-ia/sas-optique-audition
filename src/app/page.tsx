@@ -2,6 +2,7 @@ import Link from "next/link";
 import Carrousel from "@/components/Carrousel";
 import { MODULES } from "@/lib/modules";
 import { lireSession, sessionEstDirecteurOuPlus, sessionEstSuperAdmin } from "@/lib/auth";
+import BarreUtilisateur from "@/components/BarreUtilisateur";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,27 @@ export default async function AccueilPage() {
   return (
     <main className="flex flex-1 flex-col gap-10 py-12">
       <div className="mx-auto w-full max-w-3xl px-6 text-center">
+        {(estDirecteurOuPlus || estSuperAdmin) && (
+          <div className="mb-6 flex flex-wrap items-center justify-center gap-3">
+            <BarreUtilisateur />
+            {estDirecteurOuPlus && (
+              <Link
+                href="/utilisateurs"
+                className="rounded-full bg-neutral-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:scale-105 hover:bg-neutral-700"
+              >
+                🧑‍💼 Utilisateurs
+              </Link>
+            )}
+            {estSuperAdmin && (
+              <Link
+                href="/super-admin"
+                className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-1.5 text-xs font-bold text-neutral-950 shadow-sm transition hover:scale-105"
+              >
+                👑 Super Admin
+              </Link>
+            )}
+          </div>
+        )}
         <p className="text-sm font-semibold uppercase tracking-widest text-orange-500">
           SAS métier · Optique &amp; Audition
         </p>
