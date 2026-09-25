@@ -158,6 +158,49 @@ recalculé) sur la demande de prise en charge dès qu'une proposition est
 acceptée (carte Mutuelle & tiers payant) — une mutuelle les exige sur
 toute demande de prise en charge.
 
+## Mutuelle & tiers payant — extraction OCR, ayants droit, envoi
+
+La carte **Mutuelle & tiers payant** applique le même principe que la carte
+Fiche à un scan de carte de mutuelle : extraction par IA de vision
+(`src/lib/ocrMutuelle.ts`, même clé `ANTHROPIC_API_KEY`, mêmes garanties —
+jamais de valeur devinée, toujours marquée « à vérifier » jusqu'à relecture
+humaine) du nom de la mutuelle, de la plateforme de tiers payant imprimée
+sur la carte, du numéro d'adhérent et/ou de contrat (une carte peut n'avoir
+que l'un des deux), et du numéro de sécurité sociale (NIR).
+
+Le NIR extrait est comparé à ceux du même **foyer** (`model Foyer`,
+`src/lib/beneficiaires.ts`) — jamais comparé au reste de la base — pour
+repérer qu'une personne est ayant droit d'une autre : un bandeau propose
+alors de le tracer (`Personne.roleAssure = AYANT_DROIT`).
+
+Comme pour les cabinets, un annuaire des plateformes de tiers payant
+(`model PlateformeTiersPayant`, `src/lib/plateformesTiersPayant.ts`) se
+construit au fur et à mesure des saisies/extractions et sert à
+l'autocomplétion (`GET /api/plateformes-tiers-payant?q=...`). Il a été
+pré-rempli avec les noms des acteurs majeurs du marché (Viamédis, Almerys,
+iSanté, SP Santé, Carte Blanche) — leurs coordonnées professionnelles
+(email/téléphone) n'ont volontairement **pas** été recherchées/devinées et
+restent à saisir à la main depuis la carte Mutuelle (`PATCH
+/api/plateformes-tiers-payant`), une seule fois par plateforme.
+
+**Sur la télétransmission automatique ("type OMC ou mail")** : une
+intégration EDI/API directe avec ces plateformes suppose un agrément
+d'éditeur logiciel et des identifiants professionnels propres à chaque
+plateforme — rien de tout cela n'est vérifiable ni fabriquable depuis ce
+projet (voir le commentaire du modèle `DemandePriseEnCharge` dans
+`prisma/schema.prisma`). Ce qui est réellement automatisable et l'a été :
+l'**envoi par email** de la demande de prise en charge (nom/NSS de
+l'assuré, mutuelle, adhérent/contrat, plateforme, FINESS/RPPS, contenu du
+devis), bouton "✉️ Envoyer par email" à côté de "Marquer envoyée" sur
+chaque demande. Il utilise [Resend](https://resend.com)
+(`src/lib/emailTiersPayant.ts`, `RESEND_API_KEY`, `sync: false` dans
+`render.yaml`) et retrouve l'adresse dans l'annuaire des plateformes, ou
+accepte une adresse saisie à la main pour cet envoi. `RESEND_FROM` doit
+être une adresse d'un domaine vérifié sur Resend — sans domaine vérifié,
+Resend ne peut écrire qu'à l'adresse du compte lui-même, pas à un tiers.
+Sans clé configurée, l'envoi échoue proprement (message clair) ; "Marquer
+envoyée" (traçage manuel) reste toujours disponible.
+
 ## Conformité données de santé
 
 **Important, à lire avant toute mise en production** :

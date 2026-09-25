@@ -25,6 +25,7 @@ import { formaterPrix, parserPrixEnCentimes } from "@/lib/argent";
 import { garantieExpiree } from "@/lib/sav";
 import { useModeDemo } from "@/lib/modeDemo";
 import { transposerCylindrePositif, valeursActives, type MesureOeil } from "@/lib/optique";
+import type { AnalyseBeneficiaire } from "@/lib/beneficiaires";
 import Carrousel from "@/components/Carrousel";
 import CaptureCamera from "@/components/CaptureCamera";
 
@@ -1079,7 +1080,7 @@ function MutuelleEtTiersPayant({
   personne,
   propositions,
 }: {
-  personne: Personne;
+  personne: PersonneAvecRelations;
   propositions: PropositionAvecLignes[];
 }) {
   const router = useRouter();
@@ -1096,7 +1097,7 @@ function MutuelleEtTiersPayant({
       emoji="🤝"
       degrade="from-purple-400 to-fuchsia-500"
     >
-      <MutuelleInfos personne={personne} onFait={() => router.refresh()} />
+      <MutuelleInfos personne={personne} documents={personne.documents} onFait={() => router.refresh()} />
 
       <div className="mt-5 border-t border-neutral-100 pt-4">
         <h3 className="text-sm font-semibold text-neutral-800">Demandes de prise en charge</h3>
@@ -1111,6 +1112,7 @@ function MutuelleEtTiersPayant({
                 key={demande.id}
                 demande={demande}
                 proposition={proposition}
+                personne={personne}
                 mutuelleBloquante={!mutuelleRenseignee && !mutuelleRefusee}
                 onFait={() => router.refresh()}
               />
@@ -1122,11 +1124,45 @@ function MutuelleEtTiersPayant({
   );
 }
 
-function MutuelleInfos({ personne, onFait }: { personne: Personne; onFait: () => void }) {
+function MutuelleInfos({
+  personne,
+  documents,
+  onFait,
+}: {
+  personne: PersonneAvecRelations;
+  documents: Document[];
+  onFait: () => void;
+}) {
   const [edition, setEdition] = useState(false);
   const [nom, setNom] = useState(personne.mutuelleNom ?? "");
   const [numeroAdherent, setNumeroAdherent] = useState(personne.mutuelleNumeroAdherent ?? "");
+  const [numeroContrat, setNumeroContrat] = useState(personne.mutuelleNumeroContrat ?? "");
+  const [plateforme, setPlateforme] = useState(personne.mutuellePlateforme ?? "");
+  const [suggestionsPlateformes, setSuggestionsPlateformes] = useState<
+    { id: string; nom: string; emailPro: string | null; telephonePro: string | null }[]
+  >([]);
   const [envoi, setEnvoi] = useState(false);
+  const [extractionEnCours, setExtractionEnCours] = useState(false);
+  const [erreurExtraction, setErreurExtraction] = useState<string | null>(null);
+  const [beneficiaire, setBeneficiaire] = useState<AnalyseBeneficiaire | null>(null);
+  const [editionContact, setEditionContact] = useState(false);
+  const [emailProSaisi, setEmailProSaisi] = useState("");
+  const [telephoneProSaisi, setTelephoneProSaisi] = useState("");
+
+  const documentCarteMutuelle = documents.find(
+    (d) => d.type === "CARTE_MUTUELLE" && !d.cheminStockage.startsWith("verifie-sans-scan/"),
+  );
+
+  useEffect(() => {
+    const q = plateforme.trim();
+    const minuteur = setTimeout(() => {
+      fetch(`/api/plateformes-tiers-payant?q=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then(setSuggestionsPlateformes)
+        .catch(() => {});
+    }, 200);
+    return () => clearTimeout(minuteur);
+  }, [plateforme]);
 
   async function enregistrer() {
     if (!nom.trim()) return;
@@ -1134,7 +1170,12 @@ function MutuelleInfos({ personne, onFait }: { personne: Personne; onFait: () =>
     await fetch(`/api/dossiers/${personne.id}/mutuelle`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mutuelleNom: nom, mutuelleNumeroAdherent: numeroAdherent }),
+      body: JSON.stringify({
+        mutuelleNom: nom,
+        mutuelleNumeroAdherent: numeroAdherent,
+        mutuelleNumeroContrat: numeroContrat,
+        mutuellePlateforme: plateforme,
+      }),
     });
     setEnvoi(false);
     setEdition(false);
@@ -1152,34 +1193,131 @@ function MutuelleInfos({ personne, onFait }: { personne: Personne; onFait: () =>
     onFait();
   }
 
+  async function extraireOcr() {
+    if (!documentCarteMutuelle) return;
+    setExtractionEnCours(true);
+    setErreurExtraction(null);
+    const reponse = await fetch(`/api/dossiers/${personne.id}/mutuelle/extraire`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentId: documentCarteMutuelle.id }),
+    });
+    setExtractionEnCours(false);
+    if (reponse.ok) {
+      const data = await reponse.json();
+      setBeneficiaire(data.beneficiaire ?? null);
+      onFait();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreurExtraction(data.erreur ?? "Échec de l'extraction OCR.");
+    }
+  }
+
+  const contactPlateforme = suggestionsPlateformes.find(
+    (p) => p.nom.toLowerCase() === plateforme.trim().toLowerCase(),
+  );
+
+  async function enregistrerContact() {
+    if (!plateforme.trim()) return;
+    setEnvoi(true);
+    await fetch("/api/plateformes-tiers-payant", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nom: plateforme.trim(), emailPro: emailProSaisi, telephonePro: telephoneProSaisi }),
+    });
+    setEnvoi(false);
+    setEditionContact(false);
+    setSuggestionsPlateformes((liste) =>
+      liste.map((p) =>
+        p.nom.toLowerCase() === plateforme.trim().toLowerCase()
+          ? { ...p, emailPro: emailProSaisi.trim() || null, telephonePro: telephoneProSaisi.trim() || null }
+          : p,
+      ),
+    );
+  }
+
+  async function marquerAyantDroit() {
+    await fetch(`/api/dossiers/${personne.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roleAssure: "AYANT_DROIT" }),
+    });
+    setBeneficiaire(null);
+    onFait();
+  }
+
+  const boutonOcr = documentCarteMutuelle && (
+    <button
+      onClick={extraireOcr}
+      disabled={extractionEnCours}
+      className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+    >
+      {extractionEnCours ? "Extraction…" : "🤖 Extraire de la carte de mutuelle"}
+    </button>
+  );
+
+  const banniereAyantDroit = beneficiaire?.assurePrincipal && (
+    <div className="mb-2 rounded-md bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+      Ce numéro de sécurité sociale correspond à{" "}
+      <span className="font-medium">
+        {beneficiaire.assurePrincipal.prenom} {beneficiaire.assurePrincipal.nom}
+      </span>{" "}
+      dans le même foyer — {personne.prenom} est peut-être ayant droit de cette personne.{" "}
+      <button onClick={marquerAyantDroit} className="font-medium underline">
+        Marquer ayant droit
+      </button>
+    </div>
+  );
+
   if (!edition && personne.mutuelleNom) {
     return (
-      <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2">
-        <div>
-          <p className="text-sm font-medium text-neutral-800">{personne.mutuelleNom}</p>
-          {personne.mutuelleNumeroAdherent && (
-            <p className="text-xs text-neutral-500">Adhérent n° {personne.mutuelleNumeroAdherent}</p>
-          )}
+      <div>
+        {erreurExtraction && <p className="mb-2 text-xs text-red-600">{erreurExtraction}</p>}
+        {banniereAyantDroit}
+        <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2">
+          <div>
+            <p className="text-sm font-medium text-neutral-800">{personne.mutuelleNom}</p>
+            <p className="text-xs text-neutral-500">
+              {personne.mutuelleNumeroAdherent && <>Adhérent n° {personne.mutuelleNumeroAdherent}</>}
+              {personne.mutuelleNumeroAdherent && personne.mutuelleNumeroContrat && " · "}
+              {personne.mutuelleNumeroContrat && <>Contrat n° {personne.mutuelleNumeroContrat}</>}
+              {personne.mutuellePlateforme && <> · {personne.mutuellePlateforme}</>}
+            </p>
+            {personne.mutuelleExtraitParOcrA && (
+              <p className="mt-1 text-xs text-amber-700">
+                🤖 Extrait automatiquement le {new Date(personne.mutuelleExtraitParOcrA).toLocaleDateString("fr-FR")} —
+                à vérifier.
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {boutonOcr}
+            <button onClick={() => setEdition(true)} className="text-xs text-neutral-500 hover:underline">
+              Modifier
+            </button>
+          </div>
         </div>
-        <button onClick={() => setEdition(true)} className="text-xs text-neutral-500 hover:underline">
-          Modifier
-        </button>
       </div>
     );
   }
 
   return (
     <div>
+      {erreurExtraction && <p className="mb-2 text-xs text-red-600">{erreurExtraction}</p>}
+      {banniereAyantDroit}
       {!edition && personne.mutuelleRefuseeA && (
         <p className="mb-2 text-xs text-amber-700">
           Refus explicite tracé le {new Date(personne.mutuelleRefuseeA).toLocaleDateString("fr-FR")}.
         </p>
       )}
       {!edition && !personne.mutuelleRefuseeA && (
-        <p className="mb-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          ⚠️ Mutuelle non renseignée — bloque le calcul du reste à charge tant que non renseignée ou refusée
-          explicitement.
-        </p>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span>
+            ⚠️ Mutuelle non renseignée — bloque le calcul du reste à charge tant que non renseignée ou refusée
+            explicitement.
+          </span>
+          {boutonOcr}
+        </div>
       )}
       <div className="grid gap-2 sm:grid-cols-2">
         <input
@@ -1194,7 +1332,78 @@ function MutuelleInfos({ personne, onFait }: { personne: Personne; onFait: () =>
           placeholder="N° adhérent (optionnel)"
           className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
         />
+        <input
+          value={numeroContrat}
+          onChange={(e) => setNumeroContrat(e.target.value)}
+          placeholder="N° de contrat (si distinct)"
+          className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+        />
+        <label className="text-sm">
+          <input
+            list="suggestions-plateformes"
+            value={plateforme}
+            onChange={(e) => setPlateforme(e.target.value)}
+            placeholder="Plateforme de tiers payant"
+            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
+          <datalist id="suggestions-plateformes">
+            {suggestionsPlateformes.map((p) => (
+              <option key={p.id} value={p.nom} />
+            ))}
+          </datalist>
+        </label>
       </div>
+      {plateforme.trim() && (
+        <div className="mt-2 rounded-md border border-neutral-200 px-3 py-2 text-xs">
+          {!editionContact ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-neutral-600">
+                Contact {plateforme.trim()} :{" "}
+                {contactPlateforme?.emailPro || contactPlateforme?.telephonePro ? (
+                  <>
+                    {contactPlateforme.emailPro}
+                    {contactPlateforme.emailPro && contactPlateforme.telephonePro && " · "}
+                    {contactPlateforme.telephonePro}
+                  </>
+                ) : (
+                  "non renseigné"
+                )}
+              </span>
+              <button
+                onClick={() => {
+                  setEmailProSaisi(contactPlateforme?.emailPro ?? "");
+                  setTelephoneProSaisi(contactPlateforme?.telephonePro ?? "");
+                  setEditionContact(true);
+                }}
+                className="font-medium text-sky-700 hover:underline"
+              >
+                Modifier le contact
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={emailProSaisi}
+                onChange={(e) => setEmailProSaisi(e.target.value)}
+                placeholder="Email pro de la plateforme"
+                className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
+              />
+              <input
+                value={telephoneProSaisi}
+                onChange={(e) => setTelephoneProSaisi(e.target.value)}
+                placeholder="Téléphone pro"
+                className="rounded-md border border-neutral-300 px-2 py-1 text-xs"
+              />
+              <button onClick={enregistrerContact} disabled={envoi} className="font-medium text-sky-700 hover:underline">
+                Enregistrer
+              </button>
+              <button onClick={() => setEditionContact(false)} className="text-neutral-500 hover:underline">
+                Annuler
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="mt-2 flex items-center gap-2">
         <button
           onClick={enregistrer}
@@ -1225,11 +1434,13 @@ function MutuelleInfos({ personne, onFait }: { personne: Personne; onFait: () =>
 function DemandeLigne({
   demande,
   proposition,
+  personne,
   mutuelleBloquante,
   onFait,
 }: {
   demande: DemandePriseEnCharge;
   proposition: PropositionAvecLignes;
+  personne: PersonneAvecRelations;
   mutuelleBloquante: boolean;
   onFait: () => void;
 }) {
@@ -1238,6 +1449,10 @@ function DemandeLigne({
   const [montant, setMontant] = useState("");
   const [motifRefus, setMotifRefus] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
+  const [envoiEmailOuvert, setEnvoiEmailOuvert] = useState(false);
+  const [destinataireEmail, setDestinataireEmail] = useState("");
+  const [erreurEmail, setErreurEmail] = useState<string | null>(null);
+  const [envoiEmailEnCours, setEnvoiEmailEnCours] = useState(false);
 
   const total = proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
 
@@ -1246,6 +1461,41 @@ function DemandeLigne({
     await fetch(`/api/demandes-mutuelle/${demande.id}/envoyer`, { method: "POST" });
     setEnvoi(false);
     onFait();
+  }
+
+  async function ouvrirEnvoiEmail() {
+    setErreurEmail(null);
+    let email = "";
+    if (personne.mutuellePlateforme) {
+      const reponse = await fetch(`/api/plateformes-tiers-payant?q=${encodeURIComponent(personne.mutuellePlateforme)}`);
+      const liste: { nom: string; emailPro: string | null }[] = await reponse.json().catch(() => []);
+      const exact = liste.find((p) => p.nom.toLowerCase() === personne.mutuellePlateforme!.toLowerCase());
+      email = exact?.emailPro ?? "";
+    }
+    setDestinataireEmail(email);
+    setEnvoiEmailOuvert(true);
+  }
+
+  async function envoyerParEmail() {
+    if (!destinataireEmail.trim()) {
+      setErreurEmail("Adresse email destinataire requise.");
+      return;
+    }
+    setEnvoiEmailEnCours(true);
+    setErreurEmail(null);
+    const reponse = await fetch(`/api/demandes-mutuelle/${demande.id}/envoyer-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ destinataire: destinataireEmail.trim() }),
+    });
+    setEnvoiEmailEnCours(false);
+    if (reponse.ok) {
+      setEnvoiEmailOuvert(false);
+      onFait();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreurEmail(data.erreur ?? "Échec de l'envoi.");
+    }
   }
 
   async function enregistrerAccord() {
@@ -1307,20 +1557,61 @@ function DemandeLigne({
       )}
 
       {demande.statut === "A_ENVOYER" && (
-        <button
-          onClick={marquerEnvoyee}
-          disabled={envoi}
-          className="mt-2 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-        >
-          Marquer envoyée
-        </button>
+        <div className="mt-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={marquerEnvoyee}
+              disabled={envoi}
+              className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+            >
+              Marquer envoyée
+            </button>
+            <button
+              onClick={ouvrirEnvoiEmail}
+              disabled={envoi}
+              className="rounded-md border border-sky-300 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+            >
+              ✉️ Envoyer par email
+            </button>
+          </div>
+          {envoiEmailOuvert && (
+            <div className="mt-2 space-y-1.5 rounded-md border border-sky-200 bg-sky-50 p-2">
+              {erreurEmail && <p className="text-xs text-red-600">{erreurEmail}</p>}
+              <input
+                value={destinataireEmail}
+                onChange={(e) => setDestinataireEmail(e.target.value)}
+                placeholder="Adresse email de la plateforme/mutuelle"
+                className="w-full rounded-md border border-neutral-300 px-2 py-1 text-xs"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={envoyerParEmail}
+                  disabled={envoiEmailEnCours}
+                  className="rounded-md bg-sky-700 px-3 py-1 text-xs font-medium text-white hover:bg-sky-800 disabled:opacity-50"
+                >
+                  {envoiEmailEnCours ? "Envoi…" : "Envoyer"}
+                </button>
+                <button
+                  onClick={() => setEnvoiEmailOuvert(false)}
+                  className="text-xs text-neutral-500 hover:underline"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {(demande.statut === "ENVOYEE" || demande.statut === "EN_ATTENTE") && (
         <div className="mt-2">
           {demande.envoyeeA && (
             <p className="text-xs text-neutral-500">
-              Envoyée le {new Date(demande.envoyeeA).toLocaleDateString("fr-FR")}.
+              Envoyée le {new Date(demande.envoyeeA).toLocaleDateString("fr-FR")}
+              {demande.canalEnvoi === "email" && demande.destinataireEnvoi && (
+                <> par email à {demande.destinataireEnvoi}</>
+              )}
+              .
             </p>
           )}
           {!reponseOuverte ? (

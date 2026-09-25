@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
+import { enregistrerPlateformeSiValide } from "@/lib/plateformesTiersPayant";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -32,8 +33,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     donnees.mutuelleNom = nom;
     donnees.mutuelleNumeroAdherent =
       typeof body.mutuelleNumeroAdherent === "string" ? body.mutuelleNumeroAdherent.trim() || null : null;
+    donnees.mutuelleNumeroContrat =
+      typeof body.mutuelleNumeroContrat === "string" ? body.mutuelleNumeroContrat.trim() || null : null;
+    const plateforme = typeof body.mutuellePlateforme === "string" ? body.mutuellePlateforme.trim() || null : null;
+    donnees.mutuellePlateforme = plateforme;
     donnees.mutuelleRenseigneeA = maintenant;
     donnees.mutuelleRefuseeA = null;
+    donnees.mutuelleExtraitParOcrA = null; // saisie/corrigée à la main : ce n'est plus "à vérifier"
+    await enregistrerPlateformeSiValide(plateforme);
   } else {
     return NextResponse.json(
       { erreur: "Préciser mutuelleNom (+ mutuelleNumeroAdherent) ou refuser: true." },

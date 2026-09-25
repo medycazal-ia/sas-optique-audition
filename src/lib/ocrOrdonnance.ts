@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { parserMesureOeil, validerFiness, validerRpps, type MesureOeil } from "@/lib/optique";
+import { detecterTypeMime } from "@/lib/detectionMime";
 
 /**
  * Extraction des mesures d'une ordonnance optique scannée, par IA de
@@ -42,15 +43,8 @@ Règles impératives :
 - "addition" (ADD) n'est présente qu'en cas de vision de près/progressifs — sinon null.
 - Le FINESS et le RPPS sont généralement imprimés en petits caractères dans l'en-tête ou le pied de l'ordonnance, près du nom du cabinet/praticien — cherche-les spécifiquement, ne les confonds pas avec un numéro de téléphone, de sécurité sociale ou d'ADELI (ancien identifiant, différent du RPPS).
 - Si une valeur est illisible, ambiguë, ou absente, réponds null pour ce champ précis plutôt que de deviner.
-- N'invente jamais de valeur : mieux vaut null qu'une estimation.`;
-
-function detecterTypeMime(nomFichier: string): string {
-  const ext = nomFichier.toLowerCase().split(".").pop() ?? "";
-  if (ext === "png") return "image/png";
-  if (ext === "webp") return "image/webp";
-  if (ext === "pdf") return "application/pdf";
-  return "image/jpeg";
-}
+- N'invente jamais de valeur : mieux vaut null qu'une estimation.
+- Réponds TOUJOURS avec exactement ce JSON, quoi qu'il arrive — même si l'image est floue, mal cadrée, pas du tout une ordonnance, ou si tu ne peux rien y lire : dans ce cas, mets tous les champs à null. Ne réponds jamais par une phrase, une excuse ou un refus : uniquement le JSON, rien avant, rien après.`;
 
 /**
  * `contenu` : le fichier scanné (image ou PDF) tel que stocké.
@@ -67,7 +61,7 @@ export async function extraireMesuresOrdonnance(contenu: Buffer, nomFichier: str
   }
 
   const client = new Anthropic({ apiKey: cleApi });
-  const mediaType = detecterTypeMime(nomFichier);
+  const mediaType = detecterTypeMime(contenu, nomFichier);
   const donneesBase64 = contenu.toString("base64");
 
   const blocContenu =
@@ -75,19 +69,33 @@ export async function extraireMesuresOrdonnance(contenu: Buffer, nomFichier: str
       ? ({ type: "document", source: { type: "base64", media_type: mediaType, data: donneesBase64 } } as const)
       : ({
           type: "image",
-          source: { type: "base64", media_type: mediaType as "image/jpeg" | "image/png" | "image/webp", data: donneesBase64 },
+          source: {
+            type: "base64",
+            media_type: mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+            data: donneesBase64,
+          },
         } as const);
 
   const reponse = await client.messages.create({
     model: MODELE,
     max_tokens: 1024,
-    messages: [{ role: "user", content: [blocContenu, { type: "text", text: PROMPT }] }],
+    messages: [
+      { role: "user", content: [blocContenu, { type: "text", text: PROMPT }] },
+      // Force une réponse qui commence par "{" — sans ce préremplissage, le
+      // modèle répond parfois par une phrase (excuse, explication) au lieu
+      // du JSON demandé sur une image floue/non conforme, malgré la
+      // consigne — cette technique standard l'en empêche structurellement.
+      { role: "assistant", content: "{" },
+    ],
   });
 
-  const texte = reponse.content.find((bloc) => bloc.type === "text")?.text ?? "";
+  const texte = "{" + (reponse.content.find((bloc) => bloc.type === "text")?.text ?? "");
   const jsonMatch = texte.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error("Réponse de l'IA de vision illisible (aucun JSON trouvé).");
+    console.error("Extraction ordonnance — réponse IA sans JSON exploitable :", texte);
+    throw new Error(
+      "L'IA de vision n'a pas réussi à lire ce document — vérifiez la qualité/le cadrage du scan et réessayez.",
+    );
   }
 
   const brut = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
