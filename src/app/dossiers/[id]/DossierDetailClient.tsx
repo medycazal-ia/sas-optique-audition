@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type {
@@ -62,6 +62,17 @@ export default function DossierDetailClient({
   propositions: PropositionAvecLignes[];
   ventesDirectes: CommandeAvecTout[];
 }) {
+  // Atterrissage depuis la recherche de client de la carte Facturation d'un
+  // autre dossier (lien en `#carte-facturation`) : on rejoint directement la
+  // bonne carte plutôt que de laisser l'utilisateur la retrouver lui-même.
+  useEffect(() => {
+    if (window.location.hash === `#${ID_CARTE_FACTURATION}`) {
+      document
+        .getElementById(ID_CARTE_FACTURATION)
+        ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    }
+  }, []);
+
   return (
     <div className="mt-8">
       <Carrousel>
@@ -1100,7 +1111,7 @@ function FacturationEtFinancement({
         </ul>
       )}
 
-      <VenteDirecte dossierId={dossierId} onFait={actualiser} />
+      <VenteDirecteSection dossierId={dossierId} onFait={actualiser} />
     </Carte>
   );
 }
@@ -1146,9 +1157,168 @@ function LivraisonFacture({
   );
 }
 
+function VenteDirecteSection({ dossierId, onFait }: { dossierId: string; onFait: () => void }) {
+  return (
+    <div className="mt-5 border-t border-neutral-100 pt-4">
+      <h3 className="text-sm font-semibold text-neutral-800">Vente directe</h3>
+      <p className="mt-1 text-xs text-neutral-500">
+        Vendre un article au comptoir sans devis préalable — facture émise immédiatement.
+      </p>
+
+      <RechercheClientVenteDirecte dossierIdActuel={dossierId} />
+
+      <PanierVenteDirecte dossierId={dossierId} onFait={onFait} />
+    </div>
+  );
+}
+
+type ModeRechercheClient = "nom" | "nss" | "exact";
+
+function analyserRechercheClient(
+  terme: string,
+): { mode: ModeRechercheClient; valeur?: string; nom?: string; prenom?: string } {
+  const t = terme.trim();
+  if (t.includes(",")) {
+    const [nomPart, prenomPart = ""] = t.split(",");
+    return { mode: "exact", nom: nomPart.trim(), prenom: prenomPart.trim() };
+  }
+  if (/^\d+$/.test(t)) {
+    return { mode: "nss", valeur: t };
+  }
+  return { mode: "nom", valeur: t };
+}
+
+function RechercheClientVenteDirecte({ dossierIdActuel }: { dossierIdActuel: string }) {
+  const router = useRouter();
+  const [terme, setTerme] = useState("");
+  const [resultats, setResultats] = useState<Personne[] | null>(null);
+  const [recherche, setRecherche] = useState(false);
+  const [introuvable, setIntrouvable] = useState(false);
+  const requeteEnCours = useRef(0);
+
+  useEffect(() => {
+    const analyse = analyserRechercheClient(terme);
+
+    const declenche =
+      (analyse.mode === "nom" && (analyse.valeur?.length ?? 0) >= 3) ||
+      (analyse.mode === "nss" && (analyse.valeur?.length ?? 0) >= 6) ||
+      (analyse.mode === "exact" && Boolean(analyse.nom) && Boolean(analyse.prenom));
+
+    if (!declenche) {
+      setResultats(null);
+      setIntrouvable(false);
+      return;
+    }
+
+    setRecherche(true);
+    const idRequete = ++requeteEnCours.current;
+    const q = analyse.mode === "exact" ? analyse.nom! : analyse.valeur!;
+    const minuteur = setTimeout(async () => {
+      try {
+        const reponse = await fetch(`/api/dossiers?q=${encodeURIComponent(q)}`);
+        const data: Personne[] = await reponse.json();
+        if (requeteEnCours.current !== idRequete) return;
+        if (analyse.mode === "exact") {
+          const trouve = data.filter((p) => p.prenom.toLowerCase().startsWith(analyse.prenom!.toLowerCase()));
+          setResultats(trouve);
+          setIntrouvable(trouve.length === 0);
+        } else {
+          setResultats(data);
+          setIntrouvable(false);
+        }
+        setRecherche(false);
+      } catch {
+        if (requeteEnCours.current === idRequete) {
+          setResultats([]);
+          setRecherche(false);
+        }
+      }
+    }, 200);
+
+    return () => clearTimeout(minuteur);
+  }, [terme]);
+
+  function allerAuClient(client: Personne) {
+    if (client.id === dossierIdActuel) {
+      document
+        .getElementById(ID_CARTE_FACTURATION)
+        ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      return;
+    }
+    router.push(`/dossiers/${client.id}#${ID_CARTE_FACTURATION}`);
+  }
+
+  return (
+    <div className="mt-3">
+      <h4 className="text-xs font-semibold text-neutral-700">Client</h4>
+      <input
+        value={terme}
+        onChange={(e) => setTerme(e.target.value)}
+        placeholder="Nom, NSS (6 chiffres min.), ou « Nom, Prénom »…"
+        className="mt-1 w-full rounded-full border border-neutral-300 px-3 py-1.5 text-xs"
+      />
+
+      {recherche && <p className="mt-1 text-xs text-neutral-400">Recherche…</p>}
+
+      {resultats && resultats.length > 0 && (
+        <ul className="mt-1 max-h-28 space-y-1 overflow-y-auto">
+          {resultats.map((client) => (
+            <li key={client.id}>
+              <button
+                onClick={() => allerAuClient(client)}
+                className="flex w-full items-center justify-between gap-2 rounded-md border border-neutral-200 px-2 py-1 text-left text-xs hover:bg-neutral-50"
+              >
+                <span className="truncate">
+                  {client.prenom} {client.nom}
+                </span>
+                {client.id === dossierIdActuel && (
+                  <span className="shrink-0 text-emerald-600">· dossier actuel</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {introuvable && <PopupClientIntrouvable onFermer={() => setIntrouvable(false)} />}
+    </div>
+  );
+}
+
+function PopupClientIntrouvable({ onFermer }: { onFermer: () => void }) {
+  const router = useRouter();
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onFermer}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+    >
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-xs rounded-2xl bg-white p-5 text-center shadow-xl">
+        <p className="text-sm text-neutral-800">Aucun client trouvé avec ce nom et ce prénom.</p>
+        <p className="mt-1 text-sm font-semibold text-neutral-900">Créer un nouveau client ?</p>
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={() => router.push("/dossiers/nouveau")}
+            className="flex-1 rounded-lg bg-neutral-900 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-700"
+          >
+            Oui, créer
+          </button>
+          <button
+            onClick={onFermer}
+            className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-xs font-semibold hover:bg-neutral-50"
+          >
+            Non, revenir
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type LigneVentDirecte = { produit: Produit; quantite: number };
 
-function VenteDirecte({ dossierId, onFait }: { dossierId: string; onFait: () => void }) {
+function PanierVenteDirecte({ dossierId, onFait }: { dossierId: string; onFait: () => void }) {
   const [q, setQ] = useState("");
   const [resultats, setResultats] = useState<Produit[]>([]);
   const [recherche, setRecherche] = useState(false);
@@ -1211,13 +1381,9 @@ function VenteDirecte({ dossierId, onFait }: { dossierId: string; onFait: () => 
   }
 
   return (
-    <div className="mt-5 border-t border-neutral-100 pt-4">
-      <h3 className="text-sm font-semibold text-neutral-800">Vente directe</h3>
-      <p className="mt-1 text-xs text-neutral-500">
-        Vendre un article au comptoir sans devis préalable — facture émise immédiatement.
-      </p>
-
-      <form onSubmit={rechercher} className="mt-2 flex gap-2">
+    <div className="mt-4">
+      <h4 className="text-xs font-semibold text-neutral-700">Articles</h4>
+      <form onSubmit={rechercher} className="mt-1 flex gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
