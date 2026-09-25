@@ -17,3 +17,15 @@ export function estCompteDemo(email: string | null | undefined): boolean {
   if (!email) return false;
   return EMAILS_DEMO.includes(email.trim().toLowerCase());
 }
+
+/**
+ * Clé sessionStorage utilisée pour préremplir /connexion en un clic depuis
+ * la bascule "mode démo" (BarreModeDemo) — jamais dans l'URL : un nouvel
+ * onglet ouvert par script (window.open, sans noopener) depuis un onglet
+ * déjà authentifié hérite d'une copie du sessionStorage de son ouvreur, ce
+ * qui ne marche PAS pour un visiteur arrivant directement sur /connexion
+ * (bookmark, URL tapée à la main, onglet totalement neuf) — les identifiants
+ * démo ne transitent donc jamais par un canal accessible sans être déjà
+ * connecté en directeur ou plus.
+ */
+export const CLE_AUTOFILL_CONNEXION = "sas-connexion-autofill";
