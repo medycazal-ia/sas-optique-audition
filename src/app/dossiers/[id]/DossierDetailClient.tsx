@@ -63,13 +63,13 @@ export default function DossierDetailClient({
   ventesDirectes: CommandeAvecTout[];
 }) {
   // Atterrissage depuis la recherche de client de la carte Facturation d'un
-  // autre dossier (lien en `#carte-facturation`) : on rejoint directement la
-  // bonne carte plutôt que de laisser l'utilisateur la retrouver lui-même.
+  // autre dossier (lien en `#carte-facturation` ou `#facture-xxx` pour une
+  // facture précise) : on rejoint directement le bon endroit plutôt que de
+  // laisser l'utilisateur le retrouver lui-même.
   useEffect(() => {
-    if (window.location.hash === `#${ID_CARTE_FACTURATION}`) {
-      document
-        .getElementById(ID_CARTE_FACTURATION)
-        ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    const cible = window.location.hash.slice(1);
+    if (cible) {
+      document.getElementById(cible)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     }
   }, []);
 
@@ -1135,7 +1135,7 @@ function LivraisonFacture({
   }
 
   return (
-    <li className="rounded-lg border border-neutral-200 p-3">
+    <li id={livraison.facture ? `facture-${livraison.facture.id}` : undefined} className="rounded-lg border border-neutral-200 p-3">
       <span className="text-sm text-neutral-700">
         Livraison du {new Date(livraison.clotureeA ?? livraison.creeA).toLocaleDateString("fr-FR")} · {sousTitre}
       </span>
@@ -1188,10 +1188,16 @@ function analyserRechercheClient(
   return { mode: "nom", valeur: t };
 }
 
+type ClientAvecSolde = Personne & {
+  soldeTotalTTC: number;
+  reglementEnAttente: boolean;
+  factureAlerteId: string | null;
+};
+
 function RechercheClientVenteDirecte({ dossierIdActuel }: { dossierIdActuel: string }) {
   const router = useRouter();
   const [terme, setTerme] = useState("");
-  const [resultats, setResultats] = useState<Personne[] | null>(null);
+  const [resultats, setResultats] = useState<ClientAvecSolde[] | null>(null);
   const [recherche, setRecherche] = useState(false);
   const [introuvable, setIntrouvable] = useState(false);
   const requeteEnCours = useRef(0);
@@ -1215,8 +1221,8 @@ function RechercheClientVenteDirecte({ dossierIdActuel }: { dossierIdActuel: str
     const q = analyse.mode === "exact" ? analyse.nom! : analyse.valeur!;
     const minuteur = setTimeout(async () => {
       try {
-        const reponse = await fetch(`/api/dossiers?q=${encodeURIComponent(q)}`);
-        const data: Personne[] = await reponse.json();
+        const reponse = await fetch(`/api/dossiers?q=${encodeURIComponent(q)}&avecSolde=1`);
+        const data: ClientAvecSolde[] = await reponse.json();
         if (requeteEnCours.current !== idRequete) return;
         if (analyse.mode === "exact") {
           const trouve = data.filter((p) => p.prenom.toLowerCase().startsWith(analyse.prenom!.toLowerCase()));
@@ -1238,14 +1244,21 @@ function RechercheClientVenteDirecte({ dossierIdActuel }: { dossierIdActuel: str
     return () => clearTimeout(minuteur);
   }, [terme]);
 
-  function allerAuClient(client: Personne) {
+  function allerA(client: ClientAvecSolde, cible: string) {
     if (client.id === dossierIdActuel) {
-      document
-        .getElementById(ID_CARTE_FACTURATION)
-        ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      document.getElementById(cible)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
       return;
     }
-    router.push(`/dossiers/${client.id}#${ID_CARTE_FACTURATION}`);
+    router.push(`/dossiers/${client.id}#${cible}`);
+  }
+
+  function allerAuClient(client: ClientAvecSolde) {
+    allerA(client, ID_CARTE_FACTURATION);
+  }
+
+  function allerALaFactureEnAttente(client: ClientAvecSolde, event: React.MouseEvent) {
+    event.stopPropagation();
+    allerA(client, client.factureAlerteId ? `facture-${client.factureAlerteId}` : ID_CARTE_FACTURATION);
   }
 
   return (
@@ -1261,19 +1274,33 @@ function RechercheClientVenteDirecte({ dossierIdActuel }: { dossierIdActuel: str
       {recherche && <p className="mt-1 text-xs text-neutral-400">Recherche…</p>}
 
       {resultats && resultats.length > 0 && (
-        <ul className="mt-1 max-h-28 space-y-1 overflow-y-auto">
+        <ul className="mt-1 max-h-32 space-y-1 overflow-y-auto">
           {resultats.map((client) => (
             <li key={client.id}>
               <button
                 onClick={() => allerAuClient(client)}
                 className="flex w-full items-center justify-between gap-2 rounded-md border border-neutral-200 px-2 py-1 text-left text-xs hover:bg-neutral-50"
               >
-                <span className="truncate">
-                  {client.prenom} {client.nom}
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className={`truncate font-medium ${client.soldeTotalTTC > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                    {client.prenom} {client.nom}
+                  </span>
+                  {client.soldeTotalTTC > 0 && (
+                    <span className="shrink-0 text-red-600">— solde {formaterPrix(client.soldeTotalTTC)}</span>
+                  )}
                 </span>
-                {client.id === dossierIdActuel && (
-                  <span className="shrink-0 text-emerald-600">· dossier actuel</span>
-                )}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {client.id === dossierIdActuel && <span className="text-neutral-400">· dossier actuel</span>}
+                  {client.reglementEnAttente && (
+                    <span
+                      role="button"
+                      onClick={(e) => allerALaFactureEnAttente(client, e)}
+                      className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-700 hover:bg-red-200"
+                    >
+                      ⚠️ Règlement en attente
+                    </span>
+                  )}
+                </span>
               </button>
             </li>
           ))}

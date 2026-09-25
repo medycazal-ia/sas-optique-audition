@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
+import { soldeRestant } from "@/lib/facturation";
 
 const RESULTATS_MAX = 20;
 
@@ -14,9 +15,16 @@ const RESULTATS_MAX = 20;
  * charger. `q` est comparé en préfixe (insensible à la casse) sur nom,
  * prénom et numéro de sécurité sociale — une seule recherche couvre les
  * trois cas (nom seul, prénom seul, NSS seul).
+ *
+ * `avecSolde=1` (utilisé par la recherche de client de la vente directe)
+ * enrichit chaque résultat avec son solde total dû (toutes factures
+ * confondues — devis ou vente directe) et l'alerte "règlement en attente".
+ * Coûteux (requête supplémentaire par lot de résultats) donc jamais calculé
+ * pour la recherche de dossiers ordinaire.
  */
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q")?.trim() ?? "";
+  const avecSolde = request.nextUrl.searchParams.get("avecSolde") === "1";
 
   if (!q) {
     return NextResponse.json([]);
@@ -36,7 +44,52 @@ export async function GET(request: NextRequest) {
       _count: { select: { documents: true, ordonnances: true } },
     },
   });
-  return NextResponse.json(personnes);
+
+  if (!avecSolde || personnes.length === 0) {
+    return NextResponse.json(personnes);
+  }
+
+  // Commande n'a pas de relation Prisma navigable depuis Personne (FK
+  // applicative, voir schema.prisma) — on interroge donc Commande à part,
+  // pour les deux origines possibles (devis ou vente directe).
+  const commandes = await prisma.commande.findMany({
+    where: { personneId: { in: personnes.map((p) => p.id) } },
+    orderBy: { creeA: "asc" },
+    include: { livraison: { include: { facture: { include: { paiements: true, avoirs: true } } } } },
+  });
+
+  type SoldeInfo = { soldeTotalTTC: number; reglementEnAttente: boolean; factureAlerteId: string | null };
+  const soldeParPersonne = new Map<string, SoldeInfo>();
+  for (const commande of commandes) {
+    const facture = commande.livraison?.facture;
+    if (!facture) continue;
+    const solde = soldeRestant(facture, facture.paiements, facture.avoirs);
+    if (solde <= 0) continue;
+
+    const info = soldeParPersonne.get(commande.personneId) ?? {
+      soldeTotalTTC: 0,
+      reglementEnAttente: false,
+      factureAlerteId: null,
+    };
+    info.soldeTotalTTC += solde;
+    if (commande.livraison!.statut === "CLOTUREE") {
+      info.reglementEnAttente = true;
+      if (!info.factureAlerteId) info.factureAlerteId = facture.id;
+    }
+    soldeParPersonne.set(commande.personneId, info);
+  }
+
+  const enrichis = personnes.map((p) => {
+    const info = soldeParPersonne.get(p.id);
+    return {
+      ...p,
+      soldeTotalTTC: info?.soldeTotalTTC ?? 0,
+      reglementEnAttente: info?.reglementEnAttente ?? false,
+      factureAlerteId: info?.factureAlerteId ?? null,
+    };
+  });
+
+  return NextResponse.json(enrichis);
 }
 
 /**
