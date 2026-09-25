@@ -62,14 +62,10 @@ export async function extraireMutuelle(contenu: Buffer, nomFichier: string): Pro
   const reponse = await client.messages.create({
     model: MODELE,
     max_tokens: 512,
-    messages: [
-      { role: "user", content: [blocContenu, { type: "text", text: PROMPT }] },
-      // Voir ocrOrdonnance.ts pour l'explication de ce préremplissage.
-      { role: "assistant", content: "{" },
-    ],
+    messages: [{ role: "user", content: [blocContenu, { type: "text", text: PROMPT }] }],
   });
 
-  const texte = "{" + (reponse.content.find((bloc) => bloc.type === "text")?.text ?? "");
+  const texte = reponse.content.find((bloc) => bloc.type === "text")?.text ?? "";
   const jsonMatch = texte.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     console.error("Extraction mutuelle — réponse IA sans JSON exploitable :", texte);
