@@ -1108,6 +1108,14 @@ function MutuelleEtTiersPayant({
     >
       <MutuelleInfos personne={personne} documents={personne.documents} onFait={() => router.refresh()} />
 
+      <div className="mt-4 border-t border-neutral-100 pt-4">
+        <h3 className="text-sm font-semibold text-neutral-800">Mutuelle secondaire / surcomplémentaire</h3>
+        <p className="mt-1 text-xs text-neutral-500">Optionnelle — fonctionne à l&apos;identique de la mutuelle principale.</p>
+        <div className="mt-2">
+          <MutuelleSecondaireInfos personne={personne} onFait={() => router.refresh()} />
+        </div>
+      </div>
+
       <div className="mt-5 border-t border-neutral-100 pt-4">
         <h3 className="text-sm font-semibold text-neutral-800">Demandes de prise en charge</h3>
         {demandes.length === 0 ? (
@@ -1443,6 +1451,134 @@ function MutuelleInfos({
   );
 }
 
+/**
+ * Mutuelle secondaire/surcomplémentaire — mêmes règles que MutuelleInfos
+ * (voir ci-dessus) mais volontairement plus sobre : pas d'extraction OCR ni
+ * de détection ayant droit, réservées à la mutuelle principale (voir
+ * commentaire de Personne.mutuelle2* dans le schéma).
+ */
+function MutuelleSecondaireInfos({ personne, onFait }: { personne: PersonneAvecRelations; onFait: () => void }) {
+  const [edition, setEdition] = useState(false);
+  const [nom, setNom] = useState(personne.mutuelle2Nom ?? "");
+  const [numeroAdherent, setNumeroAdherent] = useState(personne.mutuelle2NumeroAdherent ?? "");
+  const [numeroContrat, setNumeroContrat] = useState(personne.mutuelle2NumeroContrat ?? "");
+  const [plateforme, setPlateforme] = useState(personne.mutuelle2Plateforme ?? "");
+  const [envoi, setEnvoi] = useState(false);
+
+  async function enregistrer() {
+    if (!nom.trim()) return;
+    setEnvoi(true);
+    await fetch(`/api/dossiers/${personne.id}/mutuelle`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rang: "SECONDAIRE",
+        mutuelleNom: nom,
+        mutuelleNumeroAdherent: numeroAdherent,
+        mutuelleNumeroContrat: numeroContrat,
+        mutuellePlateforme: plateforme,
+      }),
+    });
+    setEnvoi(false);
+    setEdition(false);
+    onFait();
+  }
+
+  async function retirer() {
+    setEnvoi(true);
+    await fetch(`/api/dossiers/${personne.id}/mutuelle`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rang: "SECONDAIRE", refuser: true }),
+    });
+    setEnvoi(false);
+    setNom("");
+    onFait();
+  }
+
+  if (!edition && personne.mutuelle2Nom) {
+    return (
+      <div className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-neutral-200 px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-neutral-800">{personne.mutuelle2Nom}</p>
+          <p className="text-xs text-neutral-500">
+            {personne.mutuelle2NumeroAdherent && <>Adhérent n° {personne.mutuelle2NumeroAdherent}</>}
+            {personne.mutuelle2NumeroAdherent && personne.mutuelle2NumeroContrat && " · "}
+            {personne.mutuelle2NumeroContrat && <>Contrat n° {personne.mutuelle2NumeroContrat}</>}
+            {personne.mutuelle2Plateforme && <> · {personne.mutuelle2Plateforme}</>}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setEdition(true)}
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
+          >
+            Modifier
+          </button>
+          <button onClick={retirer} disabled={envoi} className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">
+            Retirer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {!edition && !personne.mutuelle2Nom && (
+        <button
+          onClick={() => setEdition(true)}
+          className="rounded-md border border-dashed border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-500 hover:bg-neutral-50"
+        >
+          + Ajouter une mutuelle secondaire
+        </button>
+      )}
+      {edition && (
+        <div className="space-y-2">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              value={nom}
+              onChange={(e) => setNom(e.target.value)}
+              placeholder="Nom de la mutuelle secondaire"
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+            <input
+              value={numeroAdherent}
+              onChange={(e) => setNumeroAdherent(e.target.value)}
+              placeholder="N° adhérent (optionnel)"
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+            <input
+              value={numeroContrat}
+              onChange={(e) => setNumeroContrat(e.target.value)}
+              placeholder="N° de contrat (si distinct)"
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+            <input
+              value={plateforme}
+              onChange={(e) => setPlateforme(e.target.value)}
+              placeholder="Plateforme de tiers payant"
+              className="rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={enregistrer}
+              disabled={envoi || !nom.trim()}
+              className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+            >
+              Enregistrer
+            </button>
+            <button onClick={() => setEdition(false)} className="text-xs text-neutral-500 hover:underline">
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DemandeLigne({
   demande,
   proposition,
@@ -1556,6 +1692,11 @@ function DemandeLigne({
       <div className="flex items-center justify-between">
         <span className="text-sm text-neutral-700">
           Proposition du {new Date(proposition.creeA).toLocaleDateString("fr-FR")} · {formaterPrix(total)}
+          {demande.rang === "SECONDAIRE" && (
+            <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">
+              Mutuelle secondaire
+            </span>
+          )}
         </span>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${COULEUR_STATUT_DEMANDE[demande.statut]}`}>
           {LIBELLE_STATUT_DEMANDE[demande.statut]}
@@ -1687,13 +1828,16 @@ function DemandeLigne({
       )}
 
       {demande.statut === "ACCORD" && (
-        <p className="mt-2 text-xs text-emerald-700">
-          Pris en charge : {formaterPrix(demande.montantPriseEnChargeTTC ?? 0)} · Reste à charge :{" "}
-          {formaterPrix(proposition.resteAChargeTTC ?? 0)} ·{" "}
-          <a href={`/api/demandes-mutuelle/${demande.id}/formulaire`} target="_blank" rel="noopener noreferrer" className="underline">
-            🖨️ Imprimer
-          </a>
-        </p>
+        <div className="mt-2">
+          <p className="text-xs text-emerald-700">
+            Pris en charge : {formaterPrix(demande.montantPriseEnChargeTTC ?? 0)} · Reste à charge :{" "}
+            {formaterPrix(proposition.resteAChargeTTC ?? 0)} ·{" "}
+            <a href={`/api/demandes-mutuelle/${demande.id}/formulaire`} target="_blank" rel="noopener noreferrer" className="underline">
+              🖨️ Imprimer
+            </a>
+          </p>
+          {demande.codePaiement && <CodePaiementInfos demandeId={demande.id} demande={demande} onFait={onFait} />}
+        </div>
       )}
       {demande.statut === "REFUS" && (
         <p className="mt-2 text-xs text-red-600">
@@ -1704,6 +1848,63 @@ function DemandeLigne({
         </p>
       )}
     </li>
+  );
+}
+
+/**
+ * Affichage + action "Marquer reçu" du code paiement d'une demande à
+ * l'accord — voir lib/codePaiement.ts. Simple rapprochement (pseudo tiers
+ * payant) : jamais un mouvement d'argent réel déclenché par le logiciel.
+ */
+function CodePaiementInfos({
+  demandeId,
+  demande,
+  onFait,
+}: {
+  demandeId: string;
+  demande: DemandePriseEnCharge;
+  onFait: () => void;
+}) {
+  const [envoi, setEnvoi] = useState(false);
+
+  async function marquerRecu() {
+    setEnvoi(true);
+    await fetch(`/api/paiements/${demande.codePaiement}`, { method: "POST" });
+    setEnvoi(false);
+    onFait();
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-neutral-200 bg-neutral-50 p-2">
+      {/* eslint-disable-next-line @next/next/no-img-element -- image générée dynamiquement par une route API */}
+      <img
+        src={`/api/demandes-mutuelle/${demandeId}/code-paiement/qrcode`}
+        alt="QR code paiement"
+        width={72}
+        height={72}
+        className="rounded-md border border-neutral-200"
+      />
+      <div className="min-w-0 flex-1 text-xs">
+        <p className="font-medium text-neutral-700">Code paiement</p>
+        {demande.recuLeA ? (
+          <p className="text-emerald-700">
+            ✅ Reçu le {new Date(demande.recuLeA).toLocaleDateString("fr-FR")}
+            {demande.recuPar ? ` (${demande.recuPar})` : ""}
+          </p>
+        ) : (
+          <>
+            <p className="text-neutral-500">Non reçu — à scanner ou saisir sur /paiements une fois le montant reçu.</p>
+            <button
+              onClick={marquerRecu}
+              disabled={envoi}
+              className="mt-1 rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {envoi ? "…" : "Marquer reçu"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
