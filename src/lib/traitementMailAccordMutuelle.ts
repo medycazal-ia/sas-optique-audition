@@ -13,8 +13,10 @@ import { extraireAccordMutuelle, extraireAccordMutuelleDepuisTexte, type Resulta
  * Principe de prudence ("il ne doit y avoir aucune erreur") : n'applique
  * automatiquement un changement de statut ACCORD/REFUS que lorsque le
  * dossier concerné est identifié sans ambiguïté (numéro de sécurité sociale
- * en priorité, sinon nom+prénom exacts ET une seule demande en attente pour
- * cette personne) ET que les informations nécessaires à cette transition
+ * en priorité, sinon nom+prénom exacts, sinon nom seul si le prénom n'est
+ * pas fourni par le document — dans tous les cas une seule personne ET une
+ * seule demande en attente pour cette personne) ET que les informations
+ * nécessaires à cette transition
  * précise sont toutes présentes (montant + numéro d'accord pour un ACCORD).
  * Dans tous les autres cas : le document est tout de même enregistré sur le
  * dossier si un dossier a pu être identifié (pour qu'un humain finisse la
@@ -115,7 +117,8 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
     }
   }
 
-  // Identification du dossier — NSS en priorité (le plus fiable), sinon nom+prénom exacts.
+  // Identification du dossier — NSS en priorité (le plus fiable), sinon
+  // nom+prénom exacts, sinon nom seul si le document ne donne pas le prénom.
   // DemandePriseEnCharge.personneId n'est pas une relation Prisma déclarée
   // (voir schema.prisma) : on rejoint donc les deux requêtes à la main.
   const demandesEnAttente = await prisma.demandePriseEnCharge.findMany({
@@ -137,6 +140,13 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
       const p = personneParId.get(d.personneId);
       return p && normaliser(p.nom) === nomCible && p.prenom && normaliser(p.prenom) === prenomCible;
     });
+  } else if (extraction.patientNom) {
+    // Le prénom n'est pas toujours présent dans le courrier (certains ne
+    // mentionnent que le nom de famille) — recherche sur le nom seul ; la
+    // vérification d'unicité juste en dessous (une seule personne, une
+    // seule demande en attente) reste le garde-fou contre toute erreur.
+    const nomCible = normaliser(extraction.patientNom);
+    candidates = candidates.filter((d) => normaliser(personneParId.get(d.personneId)?.nom ?? "") === nomCible);
   } else {
     return { traite: true, apparie: false, personneId: null, demandeId: null, action: null, raison: "Mots-clés présents mais patient non identifiable (ni NSS ni nom/prénom extraits)." };
   }
