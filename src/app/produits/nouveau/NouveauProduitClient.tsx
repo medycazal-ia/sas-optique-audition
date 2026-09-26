@@ -26,9 +26,11 @@ const TYPES = [
 export default function NouveauProduitClient({
   magasins,
   fournisseurs,
+  magasinParDefautId = "",
 }: {
   magasins: Magasin[];
   fournisseurs: Fournisseur[];
+  magasinParDefautId?: string;
 }) {
   const router = useRouter();
   const [envoi, setEnvoi] = useState(false);
@@ -230,7 +232,11 @@ export default function NouveauProduitClient({
         <div className="mt-2 grid grid-cols-2 gap-3">
           <label className="text-sm">
             Magasin
-            <select name="magasinId" defaultValue="" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm">
+            <select
+              name="magasinId"
+              defaultValue={magasinParDefautId}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            >
               <option value="">— Aucun —</option>
               {magasins.map((m) => (
                 <option key={m.id} value={m.id}>

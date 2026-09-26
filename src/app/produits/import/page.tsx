@@ -1,12 +1,17 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { lireSession } from "@/lib/auth";
 import BarreUtilisateur from "@/components/BarreUtilisateur";
 import ImportCsvClient from "./ImportCsvClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function ImportCsvPage() {
-  const magasins = await prisma.magasin.findMany({ orderBy: { nom: "asc" } });
+  const session = await lireSession();
+  const [magasins, moi] = await Promise.all([
+    prisma.magasin.findMany({ orderBy: { nom: "asc" } }),
+    session ? prisma.utilisateur.findUnique({ where: { id: session.id }, select: { magasinId: true } }) : null,
+  ]);
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
@@ -32,7 +37,7 @@ export default async function ImportCsvPage() {
         </p>
       </div>
 
-      <ImportCsvClient magasins={magasins} />
+      <ImportCsvClient magasins={magasins} magasinParDefautId={moi?.magasinId ?? ""} />
     </main>
   );
 }

@@ -51,7 +51,15 @@ model Utilisateur {
 
   derniereConnexionA DateTime?
 
+  // Magasin (point de vente) de rattachement — géré depuis le Super Admin
+  // (voir model Magasin). Nullable : un compte peut n'être rattaché à
+  // aucun magasin en particulier (ex. avant affectation, ou un directeur
+  // qui supervise plusieurs points de vente).
+  magasinId String?
+  magasin   Magasin? @relation(fields: [magasinId], references: [id])
+
   @@index([role])
+  @@index([magasinId])
 }
 
 /// DIRECTEUR : accès à toutes les fonctions courantes de gestion (y compris
@@ -342,12 +350,16 @@ enum TypeDocument {
 // tarif fournisseur du jour."
 
 /// Point de vente — nécessaire pour le stock multi-magasin (référence marché
-/// MyEasyOptic citée dans docs/dossier-cadrage.md).
+/// MyEasyOptic citée dans docs/dossier-cadrage.md). Géré depuis le Super
+/// Admin (voir /super-admin/magasins) : création et renommage, jamais de
+/// suppression tant qu'un stock ou un compte utilisateur y est rattaché
+/// (perte de traçabilité sinon) — voir /api/magasins.
 model Magasin {
-  id     String  @id @default(cuid())
-  nom    String
-  ville  String?
-  stocks Stock[]
+  id            String        @id @default(cuid())
+  nom           String
+  ville         String?
+  stocks        Stock[]
+  utilisateurs  Utilisateur[]
 }
 
 /// Article catalogue : monture, verre, lentille ou accessoire (V1 optique),

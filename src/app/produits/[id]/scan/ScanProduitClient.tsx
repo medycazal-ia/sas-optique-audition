@@ -9,12 +9,16 @@ type ProduitAvecStocks = Produit & { stocks: (Stock & { magasin: Magasin })[] };
 export default function ScanProduitClient({
   produit,
   magasins,
+  magasinParDefautId = "",
 }: {
   produit: ProduitAvecStocks;
   magasins: Magasin[];
+  magasinParDefautId?: string;
 }) {
   const router = useRouter();
-  const [magasinId, setMagasinId] = useState(produit.stocks[0]?.magasinId ?? magasins[0]?.id ?? "");
+  const [magasinId, setMagasinId] = useState(
+    magasinParDefautId || produit.stocks[0]?.magasinId || magasins[0]?.id || "",
+  );
   const quantiteActuelle = produit.stocks.find((s) => s.magasinId === magasinId)?.quantite ?? 0;
   const [quantite, setQuantite] = useState(quantiteActuelle);
   const [envoi, setEnvoi] = useState(false);

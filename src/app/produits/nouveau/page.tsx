@@ -1,13 +1,16 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { lireSession } from "@/lib/auth";
 import NouveauProduitClient from "./NouveauProduitClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function NouveauProduitPage() {
-  const [magasins, fournisseurs] = await Promise.all([
+  const session = await lireSession();
+  const [magasins, fournisseurs, moi] = await Promise.all([
     prisma.magasin.findMany({ orderBy: { nom: "asc" } }),
     prisma.fournisseur.findMany({ orderBy: { nom: "asc" } }),
+    session ? prisma.utilisateur.findUnique({ where: { id: session.id }, select: { magasinId: true } }) : null,
   ]);
 
   return (
@@ -28,7 +31,7 @@ export default async function NouveauProduitPage() {
         <h1 className="text-2xl font-extrabold text-neutral-900">Nouveau produit</h1>
       </div>
 
-      <NouveauProduitClient magasins={magasins} fournisseurs={fournisseurs} />
+      <NouveauProduitClient magasins={magasins} fournisseurs={fournisseurs} magasinParDefautId={moi?.magasinId ?? ""} />
     </main>
   );
 }

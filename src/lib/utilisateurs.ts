@@ -52,7 +52,18 @@ type DonneesCreation = {
   pseudo?: string | null;
   motDePasse: string;
   role: RoleAttribuable;
+  magasinId?: string | null;
 };
+
+/** Vérifie qu'un magasinId fourni existe bien — sinon lève une erreur claire plutôt qu'une contrainte SQL brute. */
+async function validerMagasinId(magasinId: unknown): Promise<string | null | undefined> {
+  if (magasinId === undefined) return undefined;
+  if (magasinId === null || magasinId === "") return null;
+  if (typeof magasinId !== "string") throw new ErreurUtilisateur("magasinId invalide.");
+  const magasin = await prisma.magasin.findUnique({ where: { id: magasinId } });
+  if (!magasin) throw new ErreurUtilisateur("Magasin introuvable.");
+  return magasinId;
+}
 
 export async function creerUtilisateur(body: unknown) {
   const d = (body ?? {}) as Record<string, unknown>;
@@ -63,6 +74,7 @@ export async function creerUtilisateur(body: unknown) {
   const pseudo = typeof d.pseudo === "string" ? d.pseudo.trim() || null : null;
   const motDePasse = typeof d.motDePasse === "string" ? d.motDePasse : "";
   const role = d.role;
+  const magasinId = await validerMagasinId(d.magasinId);
 
   if (!nom || !prenom || !email || !email.includes("@")) {
     throw new ErreurUtilisateur("Nom, prénom et email valide sont requis.");
@@ -74,7 +86,7 @@ export async function creerUtilisateur(body: unknown) {
     throw new ErreurUtilisateur(`role doit être l'un de : ${ROLES_ATTRIBUABLES.join(", ")}`);
   }
 
-  const donnees: DonneesCreation = { nom, prenom, email, telephonePerso, pseudo, motDePasse, role };
+  const donnees: DonneesCreation = { nom, prenom, email, telephonePerso, pseudo, motDePasse, role, magasinId };
 
   const emailExistant = await prisma.utilisateur.findUnique({ where: { email: donnees.email } });
   if (emailExistant) {
@@ -96,6 +108,7 @@ export async function creerUtilisateur(body: unknown) {
       pseudo: donnees.pseudo,
       motDePasseHash: await hacherMotDePasse(donnees.motDePasse),
       role: donnees.role,
+      magasinId: donnees.magasinId ?? null,
     },
     omit: { motDePasseHash: true },
   });
@@ -140,6 +153,9 @@ export async function modifierUtilisateur(id: string, body: unknown, inclureSupe
   if (typeof d.motDePasse === "string" && d.motDePasse) {
     if (d.motDePasse.length < 8) throw new ErreurUtilisateur("Mot de passe d'au moins 8 caractères requis.");
     donnees.motDePasseHash = await hacherMotDePasse(d.motDePasse);
+  }
+  if (d.magasinId !== undefined) {
+    donnees.magasinId = await validerMagasinId(d.magasinId);
   }
 
   if (Object.keys(donnees).length === 0) {
