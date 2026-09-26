@@ -38,6 +38,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     lignes: facture.livraison.commande.lignes.map((l) => ({
       libelle: l.libelleProduit,
       description: l.descriptionProduit,
+      correction: l,
       quantite: l.quantite,
       prixUnitaireTTC: l.prixUnitaireTTC,
     })),

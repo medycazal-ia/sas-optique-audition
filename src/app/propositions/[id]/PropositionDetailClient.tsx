@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { Produit, Proposition, PropositionLigne } from "@prisma/client";
 import { formaterPrix } from "@/lib/argent";
 import PadSignature from "@/components/PadSignature";
+import CorrectionVerreEditor from "@/components/CorrectionVerreEditor";
 
 type PropositionComplete = Proposition & {
   personne: { id: string; prenom: string; nom: string; telephone: string | null };
@@ -75,18 +76,34 @@ export default function PropositionDetailClient({ proposition }: { proposition: 
         ) : (
           <ul className="mt-3 divide-y divide-neutral-100">
             {proposition.lignes.map((ligne) => (
-              <li key={ligne.id} className="flex items-center justify-between py-2 text-sm">
-                <div className="min-w-0">
-                  <p className="font-medium text-neutral-800">{ligne.libelleProduit}</p>
-                  {ligne.descriptionProduit && <p className="text-xs text-neutral-500">{ligne.descriptionProduit}</p>}
-                  <p className="text-xs text-neutral-500">
-                    {ligne.quantite} × {formaterPrix(ligne.prixUnitaireTTC)}
-                  </p>
+              <li key={ligne.id} className="py-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="font-medium text-neutral-800">{ligne.libelleProduit}</p>
+                    {ligne.descriptionProduit && <p className="text-xs text-neutral-500">{ligne.descriptionProduit}</p>}
+                    <p className="text-xs text-neutral-500">
+                      {ligne.quantite} × {formaterPrix(ligne.prixUnitaireTTC)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-neutral-900">{formaterPrix(ligne.prixUnitaireTTC * ligne.quantite)}</span>
+                    {estBrouillon && <RetirerLigne propositionId={proposition.id} ligneId={ligne.id} onFait={actualiser} />}
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold text-neutral-900">{formaterPrix(ligne.prixUnitaireTTC * ligne.quantite)}</span>
-                  {estBrouillon && <RetirerLigne propositionId={proposition.id} ligneId={ligne.id} onFait={actualiser} />}
-                </div>
+                {ligne.produit.type === "VERRE" && (
+                  <CorrectionVerreEditor
+                    valeurs={ligne}
+                    onEnregistrer={async (corps) => {
+                      const reponse = await fetch(`/api/propositions/${proposition.id}/lignes/${ligne.id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(corps),
+                      });
+                      if (reponse.ok) actualiser();
+                      return reponse.ok;
+                    }}
+                  />
+                )}
               </li>
             ))}
           </ul>

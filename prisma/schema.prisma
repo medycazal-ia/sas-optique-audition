@@ -581,6 +581,23 @@ model PropositionLigne {
   marqueProduit      String?
   fournisseurNom     String?
 
+  // Correction optique (catégorie VERRE uniquement) — préremplie depuis la
+  // dernière ordonnance OPTIQUE du dossier au moment de l'ajout (valeurs
+  // actives : adaptation opticien si elle existe, sinon prescription
+  // médecin — voir lib/optique.ts), mais PAS un instantané figé comme les
+  // champs ci-dessus : modifiable à tout moment (bouton dédié dans chaque
+  // document — proposition, facture, commande, SAV), y compris une fois la
+  // proposition envoyée/acceptée, pour corriger une erreur de fabrication
+  // constatée après coup sans recréer toute la ligne.
+  sphereOD    Float?
+  cylindreOD  Float?
+  axeOD       Int?
+  additionOD  Float?
+  sphereOG    Float?
+  cylindreOG  Float?
+  axeOG       Int?
+  additionOG  Float?
+
   @@index([propositionId])
 }
 
@@ -702,6 +719,18 @@ model CommandeLigne {
   quantite           Int      @default(1)
   prixUnitaireTTC    Int? // instantané — renseigné pour une vente directe (pas de proposition dont dériver un prix)
   numeroSerie        String? // renseigné au contrôle — utile pour les appareils auditifs
+
+  // Correction optique (catégorie VERRE) — copiée depuis la PropositionLigne
+  // d'origine (ou préremplie directement pour une vente directe), modifiable
+  // à tout moment comme sur PropositionLigne (voir son commentaire).
+  sphereOD    Float?
+  cylindreOD  Float?
+  axeOD       Int?
+  additionOD  Float?
+  sphereOG    Float?
+  cylindreOG  Float?
+  axeOG       Int?
+  additionOG  Float?
 
   savs SAV[]
 

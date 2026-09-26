@@ -29,6 +29,7 @@ import type { AnalyseBeneficiaire } from "@/lib/beneficiaires";
 import Carrousel from "@/components/Carrousel";
 import CaptureCamera from "@/components/CaptureCamera";
 import PadSignature from "@/components/PadSignature";
+import CorrectionVerreEditor from "@/components/CorrectionVerreEditor";
 
 type PersonneAvecRelations = Personne & {
   documents: Document[];
@@ -40,7 +41,10 @@ type FactureAvecTout = Facture & { paiements: Paiement[]; avoirs: Avoir[] };
 
 type CommandeAvecLignesSimples = Commande & { lignes: CommandeLigne[] };
 
-type SAVAvecCommande = SAV & { commandeRemplacement: CommandeAvecLignesSimples | null };
+type SAVAvecCommande = SAV & {
+  commandeLigne: CommandeLigneAvecProduit | null;
+  commandeRemplacement: CommandeAvecLignesSimples | null;
+};
 
 type LivraisonAvecTout = Livraison & { facture: FactureAvecTout | null; savs: SAVAvecCommande[] };
 
@@ -1834,6 +1838,29 @@ function CommandeDetail({ commande, onFait }: { commande: CommandeAvecTout; onFa
         )}
       </div>
 
+      <ul className="mt-2 space-y-1">
+        {commande.lignes.map((ligne) => (
+          <li key={ligne.id} className="text-xs text-neutral-600">
+            <span className="font-medium">{ligne.libelleProduit}</span>
+            {ligne.descriptionProduit && <span className="text-neutral-400"> — {ligne.descriptionProduit}</span>}
+            {ligne.produit.type === "VERRE" && (
+              <CorrectionVerreEditor
+                valeurs={ligne}
+                onEnregistrer={async (corps) => {
+                  const reponse = await fetch(`/api/commandes/${commande.id}/lignes/${ligne.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(corps),
+                  }).catch(() => null);
+                  if (reponse?.ok) onFait();
+                  return Boolean(reponse?.ok);
+                }}
+              />
+            )}
+          </li>
+        ))}
+      </ul>
+
       {commande.statut === "A_PASSER" && (
         <div className="mt-2 flex items-center gap-2">
           <input
@@ -2055,12 +2082,13 @@ function FacturationEtFinancement({
         .filter((c) => c.livraison && c.livraison.statut === "CLOTUREE")
         .map((c) => ({
           livraison: c.livraison as LivraisonAvecTout,
+          commande: c,
           sousTitre: `proposition du ${new Date(p.creeA).toLocaleDateString("fr-FR")}`,
         })),
     ),
     ...ventesDirectes
       .filter((c) => c.livraison && c.livraison.statut === "CLOTUREE")
-      .map((c) => ({ livraison: c.livraison as LivraisonAvecTout, sousTitre: "vente directe" })),
+      .map((c) => ({ livraison: c.livraison as LivraisonAvecTout, commande: c, sousTitre: "vente directe" })),
   ];
 
   return (
@@ -2075,8 +2103,8 @@ function FacturationEtFinancement({
         <p className="text-sm text-neutral-500">Aucune livraison clôturée à facturer pour l&apos;instant.</p>
       ) : (
         <ul className="space-y-4">
-          {livraisonsClotureesFacturables.map(({ livraison, sousTitre }) => (
-            <LivraisonFacture key={livraison.id} livraison={livraison} sousTitre={sousTitre} onFait={actualiser} />
+          {livraisonsClotureesFacturables.map(({ livraison, commande, sousTitre }) => (
+            <LivraisonFacture key={livraison.id} livraison={livraison} commande={commande} sousTitre={sousTitre} onFait={actualiser} />
           ))}
         </ul>
       )}
@@ -2088,10 +2116,12 @@ function FacturationEtFinancement({
 
 function LivraisonFacture({
   livraison,
+  commande,
   sousTitre,
   onFait,
 }: {
   livraison: LivraisonAvecTout;
+  commande: CommandeAvecTout;
   sousTitre: string;
   onFait: () => void;
 }) {
@@ -2126,7 +2156,7 @@ function LivraisonFacture({
           </button>
         </div>
       ) : (
-        <FactureDetail facture={livraison.facture} onFait={onFait} />
+        <FactureDetail facture={livraison.facture} commandeId={commande.id} lignes={commande.lignes} onFait={onFait} />
       )}
     </li>
   );
@@ -2480,7 +2510,17 @@ function PanierVenteDirecte({ dossierId, onFait }: { dossierId: string; onFait: 
   );
 }
 
-function FactureDetail({ facture, onFait }: { facture: FactureAvecTout; onFait: () => void }) {
+function FactureDetail({
+  facture,
+  commandeId,
+  lignes,
+  onFait,
+}: {
+  facture: FactureAvecTout;
+  commandeId: string;
+  lignes: CommandeLigneAvecProduit[];
+  onFait: () => void;
+}) {
   const [envoi, setEnvoi] = useState(false);
   const [montantPaiement, setMontantPaiement] = useState("");
   const [moyen, setMoyen] = useState("");
@@ -2560,6 +2600,31 @@ function FactureDetail({ facture, onFait }: { facture: FactureAvecTout; onFait: 
           🖨️ Imprimer
         </a>
       </p>
+
+      {lignes.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {lignes.map((ligne) => (
+            <li key={ligne.id} className="text-xs text-neutral-600">
+              <span className="font-medium">{ligne.libelleProduit}</span>
+              {ligne.descriptionProduit && <span className="text-neutral-400"> — {ligne.descriptionProduit}</span>}
+              {ligne.produit.type === "VERRE" && (
+                <CorrectionVerreEditor
+                  valeurs={ligne}
+                  onEnregistrer={async (corps) => {
+                    const reponse = await fetch(`/api/commandes/${commandeId}/lignes/${ligne.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(corps),
+                    }).catch(() => null);
+                    if (reponse?.ok) onFait();
+                    return Boolean(reponse?.ok);
+                  }}
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {(facture.paiements.length > 0 || facture.avoirs.length > 0) && (
         <ul className="mt-1 space-y-0.5 text-xs text-neutral-500">
@@ -2832,6 +2897,26 @@ function SAVItem({ sav, onFait }: { sav: SAVAvecCommande; onFait: () => void }) 
           {LIBELLE_STATUT_SAV[sav.statut]}
         </span>
       </div>
+
+      {sav.commandeLigne && (
+        <p className="mt-1 text-neutral-500">
+          {sav.commandeLigne.libelleProduit}
+          {sav.commandeLigne.produit.type === "VERRE" && (
+            <CorrectionVerreEditor
+              valeurs={sav.commandeLigne}
+              onEnregistrer={async (corps) => {
+                const reponse = await fetch(`/api/commandes/${sav.commandeLigne!.commandeId}/lignes/${sav.commandeLigne!.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(corps),
+                }).catch(() => null);
+                if (reponse?.ok) onFait();
+                return Boolean(reponse?.ok);
+              }}
+            />
+          )}
+        </p>
+      )}
 
       {sav.statut === "OUVERT" && (
         <div className="mt-2 space-y-2">

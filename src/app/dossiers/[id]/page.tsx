@@ -38,7 +38,10 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
                 facture: { include: { paiements: true, avoirs: true } },
                 savs: {
                   orderBy: { creeA: "desc" },
-                  include: { commandeRemplacement: { include: { lignes: true } } },
+                  include: {
+                    commandeLigne: { include: { produit: true } },
+                    commandeRemplacement: { include: { lignes: true } },
+                  },
                 },
               },
             },
@@ -57,7 +60,10 @@ export default async function DossierPage({ params }: { params: Promise<{ id: st
             facture: { include: { paiements: true, avoirs: true } },
             savs: {
               orderBy: { creeA: "desc" },
-              include: { commandeRemplacement: { include: { lignes: true } } },
+              include: {
+                commandeLigne: { include: { produit: true } },
+                commandeRemplacement: { include: { lignes: true } },
+              },
             },
           },
         },

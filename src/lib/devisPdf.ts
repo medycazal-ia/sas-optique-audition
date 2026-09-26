@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { ModeleDocument } from "@prisma/client";
 import { dessinerEntete, dessinerPiedDePage } from "@/lib/pdfCommun";
+import { formaterCorrectionVerreParOeil, type CorrectionVerre } from "@/lib/correctionVerre";
 
 /**
  * Génère un devis imprimable — pour un client qui préfère signer sur
@@ -20,7 +21,7 @@ export async function genererDevisPdf(params: {
   prenom: string;
   nom: string;
   creeA: Date;
-  lignes: { libelle: string; description?: string | null; quantite: number; prixUnitaireTTC: number }[];
+  lignes: { libelle: string; description?: string | null; correction?: CorrectionVerre | null; quantite: number; prixUnitaireTTC: number }[];
   normalise?: boolean;
   modele?: ModeleDocument | null;
 }): Promise<Uint8Array> {
@@ -75,6 +76,13 @@ export async function genererDevisPdf(params: {
     if (ligne.description) {
       page.drawText(ligne.description.slice(0, 90), { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
       y -= 14;
+    }
+    if (ligne.correction) {
+      for (const ligneCorrection of formaterCorrectionVerreParOeil(ligne.correction)) {
+        if (!ligneCorrection) continue;
+        page.drawText(ligneCorrection, { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
+        y -= 14;
+      }
     }
     y -= 4;
   }
