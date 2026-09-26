@@ -198,7 +198,126 @@ function Carte({
   );
 }
 
-function InformationsPersonnelles({ personne }: { personne: Personne }) {
+const LIBELLE_TYPE_DOCUMENT: Record<string, string> = {
+  CARTE_VITALE: "Carte Vitale",
+  CARTE_MUTUELLE: "Carte mutuelle",
+  ORDONNANCE: "Ordonnance",
+  JUSTIFICATIF: "Justificatif",
+  DEVIS_SIGNE: "Devis signé",
+  CONSENTEMENT_RGPD: "Consentement RGPD",
+  REPONSE_MUTUELLE: "Réponse mutuelle",
+  AUTRE: "Autre",
+};
+
+/**
+ * Historique de tous les documents du dossier (tous types confondus),
+ * téléchargeables, imprimables (ouverture dans un nouvel onglet — le
+ * navigateur gère l'impression) ou envoyables par mail en pièce jointe.
+ * Repliable par défaut : bouton "📄 Documents (N)".
+ */
+function HistoriqueDocuments({ dossierId, documents, libelleBouton = "Documents" }: { dossierId: string; documents: Document[]; libelleBouton?: string }) {
+  const [ouvert, setOuvert] = useState(false);
+  const tries = [...documents].sort((a, b) => new Date(b.creeA).getTime() - new Date(a.creeA).getTime());
+
+  return (
+    <div>
+      <button
+        onClick={() => setOuvert((v) => !v)}
+        className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+      >
+        📄 {libelleBouton} ({documents.length})
+      </button>
+      {ouvert && (
+        <ul className="mt-2 space-y-2">
+          {tries.length === 0 ? (
+            <p className="text-sm text-neutral-500">Aucun document pour l&apos;instant.</p>
+          ) : (
+            tries.map((d) => <LigneDocumentHistorique key={d.id} dossierId={dossierId} document={d} />)
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function LigneDocumentHistorique({ dossierId, document }: { dossierId: string; document: Document }) {
+  const [emailOuvert, setEmailOuvert] = useState(false);
+  const [email, setEmail] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const sansScan = document.cheminStockage.startsWith("verifie-sans-scan/");
+  const url = `/api/dossiers/${dossierId}/documents/${document.id}/telecharger`;
+
+  async function envoyer() {
+    if (!email.trim()) return;
+    setEnvoi(true);
+    setMessage(null);
+    const reponse = await fetch(`/api/dossiers/${dossierId}/documents/${document.id}/envoyer-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ destinataire: email.trim() }),
+    });
+    setEnvoi(false);
+    if (reponse.ok) {
+      setMessage("Envoyé.");
+      setEmailOuvert(false);
+      setEmail("");
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setMessage(data.erreur ?? "Erreur.");
+    }
+  }
+
+  return (
+    <li className="rounded-lg border border-neutral-200 p-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate font-medium text-neutral-800">{LIBELLE_TYPE_DOCUMENT[document.type] ?? document.type}</p>
+          <p className="truncate text-xs text-neutral-400">
+            {sansScan ? "Vérifié sans scan" : document.nomFichier} · {new Date(document.creeA).toLocaleDateString("fr-FR")}
+          </p>
+        </div>
+        {!sansScan && (
+          <div className="flex shrink-0 items-center gap-1">
+            <a href={url} download className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50" title="Télécharger">
+              ⬇️
+            </a>
+            <a href={url} target="_blank" rel="noopener noreferrer" className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50" title="Imprimer">
+              🖨️
+            </a>
+            <button
+              onClick={() => setEmailOuvert((v) => !v)}
+              className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
+              title="Envoyer par mail"
+            >
+              ✉️
+            </button>
+          </div>
+        )}
+      </div>
+      {emailOuvert && (
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="destinataire@exemple.fr"
+            className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+          />
+          <button
+            onClick={envoyer}
+            disabled={envoi || !email.trim()}
+            className="rounded-md bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            {envoi ? "…" : "Envoyer"}
+          </button>
+        </div>
+      )}
+      {message && <p className="mt-1 text-xs text-neutral-500">{message}</p>}
+    </li>
+  );
+}
+
+function InformationsPersonnelles({ personne }: { personne: Personne & { documents: Document[] } }) {
   const router = useRouter();
   const { activer } = useSurbrillance();
   const [champs, setChamps] = useState({
@@ -318,6 +437,9 @@ function InformationsPersonnelles({ personne }: { personne: Personne }) {
       {!identiteComplete && (
         <p className="mt-1 text-xs text-neutral-400">Renseignez nom et prénom pour activer la vente directe.</p>
       )}
+      <div className="mt-4 border-t border-neutral-100 pt-4">
+        <HistoriqueDocuments dossierId={personne.id} documents={personne.documents} />
+      </div>
     </Carte>
   );
 }
@@ -474,6 +596,11 @@ function Completude({
           }}
         />
       )}
+
+      <div className="mt-5 border-t border-neutral-100 pt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">Historique</p>
+        <HistoriqueDocuments dossierId={dossierId} documents={documents} />
+      </div>
     </Carte>
   );
 }
