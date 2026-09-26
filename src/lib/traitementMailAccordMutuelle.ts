@@ -11,26 +11,27 @@ import { extraireAccordMutuelle, extraireAccordMutuelleDepuisTexte, type Resulta
  * mail avec pièce jointe à /api/automatisations/accord-mutuelle-entrant.
  *
  * Filtre de pertinence (avant toute extraction, pour limiter le bruit et le
- * coût OCR) : mots-clés habituels (accord/refus/rejet/pec) OU nom d'un
- * patient ayant une demande en attente, cherché dans le sujet, le corps ET
- * le nom des pièces jointes — un modèle de mail de mutuelle sans les
- * mots-clés usuels ne doit pas passer à la trappe alors que le nom du
- * patient, lui, est toujours présent quelque part (constaté en pratique :
- * certains courriers de mutuelle ne nomment le patient que dans le nom du
- * fichier joint, jamais dans le corps du mail ni dans le document lui-même).
+ * coût OCR) : nom ET prénom ensemble d'un patient ayant une demande en
+ * attente, cherchés dans le sujet, le corps ou le nom de la pièce jointe —
+ * et rien d'autre (ni mots-clés génériques type "accord"/"prise en charge",
+ * ni nom de famille seul). Un nom de famille seul peut apparaître par pure
+ * coïncidence dans un mail sans rapport (signature de l'expéditeur, société,
+ * tiers cité) — constaté en production avec un patient dont le nom de
+ * famille coïncidait avec celui de l'opticien lui-même, ce qui faisait
+ * attacher des documents sans rapport au mauvais dossier. Exiger nom+prénom
+ * ensemble élimine ce risque : c'est une coïncidence bien plus improbable.
  *
  * Principe de prudence ("il ne doit y avoir aucune erreur") : n'applique
  * automatiquement un changement de statut ACCORD/REFUS que lorsque le
  * dossier concerné est identifié sans ambiguïté (numéro de sécurité sociale
- * en priorité, sinon nom+prénom exacts, sinon nom seul si le prénom n'est
- * pas fourni par le document — dans tous les cas une seule personne ET une
- * seule demande en attente pour cette personne) ET que les informations
- * nécessaires à cette transition
- * précise sont toutes présentes (montant + numéro d'accord pour un ACCORD).
- * Dans tous les autres cas : le document est tout de même enregistré sur le
- * dossier si un dossier a pu être identifié (pour qu'un humain finisse la
- * saisie en un clic, voir CaptureNumeroAccord), et l'événement est journalisé
- * pour traçabilité — jamais de modification silencieuse ni de devinette.
+ * en priorité, sinon nom+prénom exacts trouvés ci-dessus — une seule
+ * personne ET une seule demande en attente pour cette personne) ET que les
+ * informations nécessaires à cette transition précise sont toutes présentes
+ * (montant + numéro d'accord pour un ACCORD). Dans tous les autres cas : le
+ * document est tout de même enregistré sur le dossier si un dossier a pu
+ * être identifié (pour qu'un humain finisse la saisie en un clic, voir
+ * CaptureNumeroAccord), et l'événement est journalisé pour traçabilité —
+ * jamais de modification silencieuse ni de devinette.
  */
 
 export type PayloadMailEntrant = {
@@ -66,15 +67,13 @@ function versBuffer(valeur: unknown): Buffer | null {
 }
 
 export type ResultatTraitementMail = {
-  traite: boolean; // false si le mail a été ignoré (mots-clés absents)
+  traite: boolean; // false si aucun patient en attente (nom+prénom) n'a été reconnu
   apparie: boolean; // true si un dossier a été identifié sans ambiguïté
   personneId: string | null;
   demandeId: string | null;
   action: "ACCORD" | "REFUS" | "DOCUMENT_SEUL" | null;
   raison: string;
 };
-
-const MOTS_CLES_PERTINENCE = /\b(accord|refus|rejet|rejete|rejetee|prise\s*en\s*charge|p\.?e\.?c\.?)\b/i;
 
 function normaliser(texte: string): string {
   return texte
@@ -95,30 +94,32 @@ function normaliserNomFichier(nomFichier: string): string {
 
 /**
  * Cherche, parmi les patients ayant une demande en attente, celui dont le nom
- * apparaît dans un texte déjà normalisé (sujet, corps du mail, ou nom des
- * pièces jointes — voir les trois appels dans traiterMailAccordMutuelle,
- * chacun dans l'ordre de priorité demandé : sujet, puis corps, puis nom du
- * fichier, le contenu du document lui-même n'étant consulté qu'en dernier
- * recours). N'en retourne un que si un seul nom correspond (ambiguïté entre
- * plusieurs personnes -> null, jamais de choix arbitraire) ; complète le
- * prénom seulement s'il apparaît aussi dans ce même texte, pour permettre
- * l'identification nom+prénom la plus précise, sinon retomber sur le nom
- * seul (voir la logique de rapprochement plus bas).
+ * ET le prénom apparaissent TOUS LES DEUX dans un texte déjà normalisé
+ * (sujet, corps du mail, ou nom de la pièce jointe — voir les trois appels
+ * dans traiterMailAccordMutuelle, chacun dans l'ordre de priorité demandé :
+ * sujet, puis corps, puis nom du fichier). Le nom seul, sans le prénom,
+ * n'est jamais suffisant : il peut apparaître par coïncidence (signature de
+ * l'expéditeur, société, tiers cité) — constaté en production avec un
+ * patient dont le nom de famille coïncidait avec celui de l'opticien
+ * lui-même, ce qui avait fait attacher des documents sans rapport au mauvais
+ * dossier. N'en retourne un que si un seul patient correspond (ambiguïté
+ * entre plusieurs personnes -> null, jamais de choix arbitraire).
  */
-function patientDepuisTexte(texteNormalise: string, personnes: PersonneEnAttente[]): { nom: string; prenom: string | null } | null {
+function patientDepuisTexte(texteNormalise: string, personnes: PersonneEnAttente[]): { nom: string; prenom: string } | null {
   if (!texteNormalise) return null;
   const correspondances = new Map<string, PersonneEnAttente>();
   for (const p of personnes) {
     const nom = normaliser(p.nom);
-    if (nom.length >= 2 && texteNormalise.includes(nom)) {
+    const prenom = p.prenom ? normaliser(p.prenom) : null;
+    if (nom.length < 2 || !prenom || prenom.length < 2) continue;
+    if (texteNormalise.includes(nom) && texteNormalise.includes(prenom)) {
       correspondances.set(p.id, p);
     }
   }
   if (correspondances.size !== 1) return null;
 
   const personne = [...correspondances.values()][0];
-  const prenomTrouve = personne.prenom && texteNormalise.includes(normaliser(personne.prenom)) ? personne.prenom : null;
-  return { nom: personne.nom, prenom: prenomTrouve };
+  return { nom: personne.nom, prenom: personne.prenom! };
 }
 
 export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Promise<ResultatTraitementMail> {
@@ -150,12 +151,13 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
   const patientFichier = patientDepuisTexte(nomsFichiersNormalises, personnesConcernees);
   const patientDeterministe = patientSujet ?? patientCorps ?? patientFichier;
 
-  // Le nom du patient, toujours présent dans un vrai mail de mutuelle quelque
-  // part (sujet, corps ou nom du fichier), sert aussi de signal de
-  // pertinence : un modèle de mail sans les mots-clés habituels ne doit pas
-  // faire passer à la trappe un vrai accord/refus.
-  if (!MOTS_CLES_PERTINENCE.test(`${payload.subject}\n${payload.bodyText}`) && !patientDeterministe) {
-    return { traite: false, apparie: false, personneId: null, demandeId: null, action: null, raison: "Mots-clés absents et aucun nom de patient en attente reconnu — mail ignoré." };
+  // Seul critère de pertinence : nom ET prénom d'un patient en attente
+  // trouvés ensemble (sujet, corps, ou nom du fichier) — rien d'autre. Pas
+  // de mots-clés génériques ("accord", "prise en charge"...), qui déclenchent
+  // trop de faux positifs sur du courrier sans rapport ; pas de nom seul, qui
+  // peut coïncider avec autre chose (voir patientDepuisTexte).
+  if (!patientDeterministe) {
+    return { traite: false, apparie: false, personneId: null, demandeId: null, action: null, raison: "Nom et prénom d'aucun patient en attente reconnus dans le sujet, le corps ou le nom du fichier — mail ignoré." };
   }
 
   // Extraction depuis le document — toujours nécessaire pour statut/motif de
@@ -194,36 +196,26 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
     }
   }
 
-  // Le patient identifié par sujet/corps/nom-de-fichier prime toujours sur ce
-  // que l'OCR/l'IA a cru lire dans le document ou le corps du mail — ce
-  // n'est qu'à défaut de toute source déterministe qu'on fait confiance au
-  // contenu du document lui-même (patientNom/Prénom déjà dans `extraction`).
-  if (patientDeterministe) {
-    extraction = { ...extraction, patientNom: patientDeterministe.nom, patientPrenom: patientDeterministe.prenom };
-  }
+  // Le patient identifié par sujet/corps/nom-de-fichier (garde-fou nom+prénom
+  // ensemble, voir patientDepuisTexte) prime toujours sur ce que l'OCR/l'IA a
+  // cru lire dans le document ou le corps du mail.
+  extraction = { ...extraction, patientNom: patientDeterministe.nom, patientPrenom: patientDeterministe.prenom };
 
   // Rapprochement — demandesEnAttente/personnesConcernees/personneParId déjà
-  // récupérées plus haut (elles servent aussi au filtre de pertinence).
+  // récupérées plus haut (elles servent aussi au filtre de pertinence). NSS
+  // (extrait du document) en priorité si présent, sinon nom+prénom — jamais
+  // le nom seul (voir patientDepuisTexte pour pourquoi).
   let candidates = demandesEnAttente;
   if (extraction.patientNumeroSecuriteSociale) {
     const nss = extraction.patientNumeroSecuriteSociale.replace(/\s+/g, "");
     candidates = candidates.filter((d) => personneParId.get(d.personneId)?.numeroSecuriteSociale?.replace(/\s+/g, "") === nss);
-  } else if (extraction.patientNom && extraction.patientPrenom) {
-    const nomCible = normaliser(extraction.patientNom);
-    const prenomCible = normaliser(extraction.patientPrenom);
+  } else {
+    const nomCible = normaliser(patientDeterministe.nom);
+    const prenomCible = normaliser(patientDeterministe.prenom);
     candidates = candidates.filter((d) => {
       const p = personneParId.get(d.personneId);
       return p && normaliser(p.nom) === nomCible && p.prenom && normaliser(p.prenom) === prenomCible;
     });
-  } else if (extraction.patientNom) {
-    // Le prénom n'est pas toujours présent dans le courrier (certains ne
-    // mentionnent que le nom de famille) — recherche sur le nom seul ; la
-    // vérification d'unicité juste en dessous (une seule personne, une
-    // seule demande en attente) reste le garde-fou contre toute erreur.
-    const nomCible = normaliser(extraction.patientNom);
-    candidates = candidates.filter((d) => normaliser(personneParId.get(d.personneId)?.nom ?? "") === nomCible);
-  } else {
-    return { traite: true, apparie: false, personneId: null, demandeId: null, action: null, raison: "Mots-clés présents mais patient non identifiable (ni NSS ni nom/prénom extraits)." };
   }
 
   const personneIds = [...new Set(candidates.map((d) => d.personneId))];
