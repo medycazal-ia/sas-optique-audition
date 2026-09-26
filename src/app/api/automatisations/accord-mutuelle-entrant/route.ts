@@ -44,14 +44,31 @@ export async function POST(request: NextRequest) {
       )
     : [];
 
-  const resultat = await traiterMailAccordMutuelle({
-    from: typeof body.from === "string" ? body.from : "",
-    subject: body.subject,
-    bodyText: body.bodyText,
-    messageId: typeof body.messageId === "string" ? body.messageId : undefined,
-    attachments,
-  });
-  console.log("accord-mutuelle-entrant — traité :", { subject: body.subject, ...resultat });
-
-  return NextResponse.json(resultat);
+  // Jamais d'exception non rattrapée ici : sans ce filet, une erreur (Prisma,
+  // réseau...) crasherait la requête avec la page d'erreur générique de
+  // Next.js, sans jamais apparaître comme un log identifiable — exactement
+  // le genre de panne qui a rendu ce webhook impossible à diagnostiquer en
+  // conditions réelles (aucune ligne "accord-mutuelle-entrant" du tout pour
+  // certains mails, sans autre explication visible dans les logs Render).
+  try {
+    const resultat = await traiterMailAccordMutuelle({
+      from: typeof body.from === "string" ? body.from : "",
+      subject: body.subject,
+      bodyText: body.bodyText,
+      messageId: typeof body.messageId === "string" ? body.messageId : undefined,
+      attachments,
+    });
+    console.log("accord-mutuelle-entrant — traité :", { subject: body.subject, ...resultat });
+    return NextResponse.json(resultat);
+  } catch (e) {
+    console.error(
+      "accord-mutuelle-entrant — ERREUR NON RATTRAPÉE :",
+      { subject: body.subject, from: body.from },
+      e instanceof Error ? e.stack ?? e.message : e,
+    );
+    return NextResponse.json(
+      { erreur: e instanceof Error ? e.message : "Erreur inattendue.", subject: body.subject },
+      { status: 500 },
+    );
+  }
 }
