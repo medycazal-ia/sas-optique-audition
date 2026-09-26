@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
+import { assurerCodePaiement } from "@/lib/codePaiement";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -40,7 +41,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   if (decision === "ACCORD") {
     const personne = await prisma.personne.findUnique({ where: { id: demande.personneId } });
-    if (!personne?.mutuelleNom && !personne?.mutuelleRefuseeA) {
+    const secondaire = demande.rang === "SECONDAIRE";
+    const mutuelleNomDuRang = secondaire ? personne?.mutuelle2Nom : personne?.mutuelleNom;
+    const mutuelleRefuseeDuRang = secondaire ? personne?.mutuelle2RefuseeA : personne?.mutuelleRefuseeA;
+    if (!mutuelleNomDuRang && !mutuelleRefuseeDuRang) {
       return NextResponse.json(
         {
           erreur:
@@ -61,13 +65,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const totalProposition = demande.proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
     const resteAChargeTTC = Math.max(0, totalProposition - montant);
 
-    const [mise_a_jour] = await prisma.$transaction([
+    await prisma.$transaction([
       prisma.demandePriseEnCharge.update({
         where: { id },
         data: { statut: "ACCORD", reponseA: new Date(), montantPriseEnChargeTTC: montant },
       }),
       prisma.proposition.update({ where: { id: demande.propositionId }, data: { resteAChargeTTC } }),
     ]);
+
+    // Code paiement — voir lib/codePaiement.ts : généré dès que le montant
+    // est connu, pour permettre le rapprochement (pseudo tiers payant) dès
+    // maintenant, même avant réception effective des fonds. Généré après la
+    // transaction ci-dessus (upsert idempotent propre, indépendant d'elle) —
+    // on relit ensuite l'enregistrement complet pour le renvoyer à jour.
+    await assurerCodePaiement(id);
+    const mise_a_jour = await prisma.demandePriseEnCharge.findUniqueOrThrow({ where: { id } });
 
     await journaliser({
       type: "demande-mutuelle.accord",

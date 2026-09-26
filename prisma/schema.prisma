@@ -176,6 +176,18 @@ model Personne {
   mutuelleRefuseeA       DateTime?
   mutuelleExtraitParOcrA DateTime? // horodatage d'une extraction automatique — null si saisie/corrigée à la main
 
+  // Mutuelle secondaire/surcomplémentaire — fonctionne à l'identique de la
+  // mutuelle principale ci-dessus (mêmes règles), en plus d'elle et non à sa
+  // place : un dossier peut avoir les deux, ou seulement la principale.
+  // L'extraction OCR de carte mutuelle ne cible aujourd'hui que la
+  // principale — la secondaire se renseigne à la main.
+  mutuelle2Nom            String?
+  mutuelle2NumeroAdherent String?
+  mutuelle2NumeroContrat  String?
+  mutuelle2Plateforme     String?
+  mutuelle2RenseigneeA    DateTime?
+  mutuelle2RefuseeA       DateTime?
+
   // Mini-audit vocal : synthèse IA, jamais actée sans validation humaine explicite.
   syntheseBesoin           String? // texte libre généré par IA puis édité par l'humain
   syntheseBesoinValideeA   DateTime? // horodatage de la validation humaine — null tant que non validée
@@ -301,6 +313,57 @@ model PlateformeTiersPayant {
   nom             String   @unique
   emailPro        String?
   telephonePro    String?
+
+  @@index([nom])
+}
+
+/// Annuaire des mutuelles/complémentaires santé (AMC) — configuré depuis le
+/// Super Admin, sert à automatiser les demandes de prise en charge et de
+/// paiement (au-delà du simple carnet d'adresses PlateformeTiersPayant :
+/// une Mutuelle porte ses propres identifiants d'accès portail).
+///
+/// ⚠️ identifiantAcces/motDePasseAcces sont stockés tels quels (aucun
+/// chiffrement au repos) — même limite, assumée et documentée, que le reste
+/// de l'application vis-à-vis de l'hébergement HDS (voir
+/// docs/conformite-hds.md) : ne pas y placer d'identifiants réels tant que
+/// l'hébergement n'est pas durci en conséquence.
+model Mutuelle {
+  id         String  @id @default(cuid())
+  creeA      DateTime @default(now())
+  modifieA   DateTime @updatedAt
+  nom        String  @unique
+  plateforme String? // nom de la plateforme de tiers payant utilisée (Viamédis, Almerys...), texte libre
+
+  identifiantAcces String? // login du portail pro de cette mutuelle
+  motDePasseAcces  String? // voir avertissement ci-dessus
+  urlPortail       String?
+
+  telephone String?
+  email     String?
+
+  delaiRemboursementJoursConnu Int? // délai habituel constaté, informatif seulement
+
+  actif     Boolean @default(true)
+  remarques String?
+
+  @@index([nom])
+}
+
+/// Annuaire des caisses de sécurité sociale (AMO — assurance maladie
+/// obligatoire : CPAM, MSA...) — plus sobre que Mutuelle : pas d'identifiants
+/// de portail par caisse (l'accès pro passe par un système national unique,
+/// pas par caisse), juste de quoi contacter la bonne caisse pour un dossier.
+model CaisseAmo {
+  id         String   @id @default(cuid())
+  creeA      DateTime @default(now())
+  modifieA   DateTime @updatedAt
+  nom        String   @unique // ex. "CPAM de Paris"
+  codeCaisse String?
+  telephone  String?
+  email      String?
+  adresse    String?
+  actif      Boolean  @default(true)
+  remarques  String?
 
   @@index([nom])
 }
@@ -688,9 +751,28 @@ model DemandePriseEnCharge {
   envoyeeA      DateTime?
   reponseA      DateTime?
 
+  // À quelle mutuelle du dossier cette demande se rapporte — Personne peut
+  // porter une mutuelle principale ET une secondaire/surcomplémentaire
+  // (mêmes règles pour les deux, voir Personne.mutuelle2*) : une demande
+  // par mutuelle, jamais fusionnées.
+  rang RangMutuelle @default(PRINCIPALE)
+
   // Renseignés uniquement à l'accord — jamais recalculés ailleurs.
   montantPriseEnChargeTTC Int?
   motifRefus              String?
+
+  // "Code paiement" — jeton unique généré dès que le montant de l'accord
+  // est connu, imprimé en QR (voir /api/demandes-mutuelle/:id/code-paiement).
+  // Fonctionne comme un "pseudo tiers payant" : que l'opticien pratique ou
+  // non le tiers payant réel avec cette mutuelle, ce code sert de moyen de
+  // rapprochement à saisir/scanner quand la somme est effectivement reçue
+  // de la mutuelle — ou même avant, si une caution client a été prise en
+  // attendant son propre remboursement. Aléatoire (128 bits, crypto.randomBytes)
+  // et unique : "chiffré" au sens non-devinable/vérifiable, pas un secret
+  // réversible — voir lib/codePaiement.ts.
+  codePaiement String?   @unique
+  recuLeA      DateTime?
+  recuPar      String? // email de qui a validé la réception
 
   // FINESS du cabinet et RPPS du praticien prescripteur — copiés depuis la
   // dernière Ordonnance OPTIQUE du dossier au moment de la création de
@@ -717,6 +799,11 @@ enum StatutDemandeMutuelle {
   EN_ATTENTE
   ACCORD
   REFUS
+}
+
+enum RangMutuelle {
+  PRINCIPALE
+  SECONDAIRE
 }
 
 // --- Module Commande & livraison (Lot 5) -------------------------------------

@@ -26,7 +26,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
   const personne = await prisma.personne.findUnique({
     where: { id: demande.personneId },
-    select: { prenom: true, nom: true, mutuelleNom: true },
+    select: { prenom: true, nom: true, mutuelleNom: true, mutuelle2Nom: true },
   });
   if (!personne) {
     return NextResponse.json({ erreur: "Dossier introuvable." }, { status: 404 });
@@ -41,7 +41,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     reponseA: demande.reponseA,
     montantPriseEnChargeTTC: demande.montantPriseEnChargeTTC,
     motifRefus: demande.motifRefus,
-    mutuelleNom: personne.mutuelleNom,
+    mutuelleNom: demande.rang === "SECONDAIRE" ? personne.mutuelle2Nom : personne.mutuelleNom,
     finess: demande.finess,
     rpps: demande.rpps,
     lignes: demande.proposition.lignes.map((l) => ({

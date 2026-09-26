@@ -33,8 +33,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 
   const personne = demande.proposition.personne;
+  // rang détermine quelle mutuelle du dossier cette demande concerne — voir
+  // Personne.mutuelle2* et le commentaire de DemandePriseEnCharge.rang.
+  const secondaire = demande.rang === "SECONDAIRE";
+  const mutuelleNom = secondaire ? personne.mutuelle2Nom : personne.mutuelleNom;
+  const mutuelleNumeroAdherent = secondaire ? personne.mutuelle2NumeroAdherent : personne.mutuelleNumeroAdherent;
+  const mutuelleNumeroContrat = secondaire ? personne.mutuelle2NumeroContrat : personne.mutuelleNumeroContrat;
+  const mutuellePlateforme = secondaire ? personne.mutuelle2Plateforme : personne.mutuellePlateforme;
+
   const destinataireSaisi = typeof body.destinataire === "string" ? body.destinataire.trim() : "";
-  const plateforme = destinataireSaisi ? null : await trouverPlateformeParNom(personne.mutuellePlateforme);
+  const plateforme = destinataireSaisi ? null : await trouverPlateformeParNom(mutuellePlateforme);
   const destinataire = destinataireSaisi || plateforme?.emailPro || "";
 
   if (!destinataire) {
@@ -77,10 +85,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       reference: demande.id,
       assure: { prenom: personne.prenom, nom: personne.nom, numeroSecuriteSociale: personne.numeroSecuriteSociale },
       mutuelle: {
-        nom: personne.mutuelleNom,
-        numeroAdherent: personne.mutuelleNumeroAdherent,
-        numeroContrat: personne.mutuelleNumeroContrat,
-        plateforme: personne.mutuellePlateforme,
+        nom: mutuelleNom,
+        numeroAdherent: mutuelleNumeroAdherent,
+        numeroContrat: mutuelleNumeroContrat,
+        plateforme: mutuellePlateforme,
       },
       prescripteur: { finess, rpps },
       proposition: {
