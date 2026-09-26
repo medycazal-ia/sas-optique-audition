@@ -403,6 +403,7 @@ enum TypeDocument {
   JUSTIFICATIF
   DEVIS_SIGNE
   CONSENTEMENT_RGPD
+  REPONSE_MUTUELLE // courrier de réponse de la mutuelle (accord/refus) — voir lib/ocrAccordMutuelle.ts
   AUTRE
 }
 
