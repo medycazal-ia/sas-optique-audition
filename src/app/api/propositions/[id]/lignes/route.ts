@@ -39,7 +39,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const produit = await prisma.produit.findUnique({ where: { id: produitId }, include: { stocks: true } });
+  const produit = await prisma.produit.findUnique({
+    where: { id: produitId },
+    include: { stocks: true, fournisseur: true },
+  });
   if (!produit) {
     return NextResponse.json({ erreur: "Produit introuvable." }, { status: 404 });
   }
@@ -67,6 +70,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       quantite,
       libelleProduit: `${produit.marque} ${produit.modele}`,
       prixUnitaireTTC: produit.prixTTC,
+      // Instantanés, comme libelleProduit/prixUnitaireTTC ci-dessus — voir
+      // le commentaire du modèle PropositionLigne (fournisseurNom n'est
+      // jamais imprimé sur devis/facture, seulement transmis en interne et
+      // sur les demandes de prise en charge mutuelle/sécurité sociale).
+      descriptionProduit: produit.description,
+      marqueProduit: produit.marque,
+      fournisseurNom: produit.fournisseur?.nom ?? null,
     },
   });
 

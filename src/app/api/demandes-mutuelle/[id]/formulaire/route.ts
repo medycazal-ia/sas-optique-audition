@@ -13,7 +13,10 @@ type RouteParams = { params: Promise<{ id: string }> };
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
 
-  const demande = await prisma.demandePriseEnCharge.findUnique({ where: { id } });
+  const demande = await prisma.demandePriseEnCharge.findUnique({
+    where: { id },
+    include: { proposition: { include: { lignes: true } } },
+  });
   if (!demande) {
     return NextResponse.json({ erreur: "Demande introuvable." }, { status: 404 });
   }
@@ -41,6 +44,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     mutuelleNom: personne.mutuelleNom,
     finess: demande.finess,
     rpps: demande.rpps,
+    lignes: demande.proposition.lignes.map((l) => ({
+      libelle: l.libelleProduit,
+      description: l.descriptionProduit,
+      fournisseur: l.fournisseurNom,
+    })),
     modele,
   });
 

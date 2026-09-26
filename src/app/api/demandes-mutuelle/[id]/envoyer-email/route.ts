@@ -86,7 +86,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       proposition: {
         creeA: demande.proposition.creeA,
         totalTTC,
-        libelles: demande.proposition.lignes.map((l) => `${l.libelleProduit} (x${l.quantite})`),
+        libelles: demande.proposition.lignes.map((l) => {
+          const details = [l.descriptionProduit, l.fournisseurNom ? `fournisseur : ${l.fournisseurNom}` : null].filter(
+            (d): d is string => Boolean(d),
+          );
+          const suffixe = details.length > 0 ? ` — ${details.join(" — ")}` : "";
+          return `${l.libelleProduit} (x${l.quantite})${suffixe}`;
+        }),
       },
     });
   } catch (e) {

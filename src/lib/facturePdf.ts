@@ -8,7 +8,7 @@ export async function genererFacturePdf(params: {
   nom: string;
   creeA: Date;
   montantTTC: number;
-  lignes: { libelle: string; quantite: number; prixUnitaireTTC: number | null }[];
+  lignes: { libelle: string; description?: string | null; quantite: number; prixUnitaireTTC: number | null }[];
   modele?: ModeleDocument | null;
 }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -46,7 +46,12 @@ export async function genererFacturePdf(params: {
     page.drawText(String(ligne.quantite), { x: marge + largeur - 160, y, size: 10, font: police });
     page.drawText(formaterPrix(prixUnitaire), { x: marge + largeur - 120, y, size: 10, font: police });
     page.drawText(formaterPrix(totalLigne), { x: marge + largeur - 40, y, size: 10, font: police });
-    y -= 18;
+    y -= 14;
+    if (ligne.description) {
+      page.drawText(ligne.description.slice(0, 90), { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
+      y -= 14;
+    }
+    y -= 4;
   }
 
   y -= 8;

@@ -74,6 +74,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             return {
               produitId: produit.id,
               libelleProduit: `${produit.marque} ${produit.modele}`,
+              descriptionProduit: produit.description,
               quantite: l.quantite,
               prixUnitaireTTC: produit.prixTTC,
             };

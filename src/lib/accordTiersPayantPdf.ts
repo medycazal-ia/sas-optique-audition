@@ -17,6 +17,11 @@ export async function genererAccordTiersPayantPdf(params: {
   mutuelleNom: string | null;
   finess: string | null;
   rpps: string | null;
+  // Contrairement au devis/à la facture, ce document interne à l'échange
+  // avec la mutuelle/sécurité sociale liste aussi le fournisseur de chaque
+  // article, nécessaire au traitement de la demande — voir
+  // PropositionLigne.fournisseurNom (jamais imprimé sur devis/facture).
+  lignes?: { libelle: string; description?: string | null; fournisseur?: string | null }[];
   modele?: ModeleDocument | null;
 }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -64,6 +69,24 @@ export async function genererAccordTiersPayantPdf(params: {
     page.drawText("Motif du refus", { x: marge, y, size: 11, font: policeGras });
     y -= 18;
     page.drawText(params.motifRefus ?? "Non précisé.", { x: marge, y, size: 10, font: police });
+  }
+
+  if (params.lignes && params.lignes.length > 0) {
+    y -= 30;
+    page.drawText("Articles concernés", { x: marge, y, size: 11, font: policeGras });
+    y -= 6;
+    for (const ligne of params.lignes) {
+      y -= 16;
+      page.drawText(ligne.libelle.slice(0, 70), { x: marge, y, size: 10, font: police });
+      if (ligne.description) {
+        y -= 13;
+        page.drawText(ligne.description.slice(0, 90), { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
+      }
+      if (ligne.fournisseur) {
+        y -= 13;
+        page.drawText(`Fournisseur : ${ligne.fournisseur}`, { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
+      }
+    }
   }
 
   dessinerPiedDePage(page, police, marge, params.modele ?? null);
