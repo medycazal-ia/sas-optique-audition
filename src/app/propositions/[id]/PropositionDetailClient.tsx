@@ -76,8 +76,9 @@ export default function PropositionDetailClient({ proposition }: { proposition: 
           <ul className="mt-3 divide-y divide-neutral-100">
             {proposition.lignes.map((ligne) => (
               <li key={ligne.id} className="flex items-center justify-between py-2 text-sm">
-                <div>
+                <div className="min-w-0">
                   <p className="font-medium text-neutral-800">{ligne.libelleProduit}</p>
+                  {ligne.descriptionProduit && <p className="text-xs text-neutral-500">{ligne.descriptionProduit}</p>}
                   <p className="text-xs text-neutral-500">
                     {ligne.quantite} × {formaterPrix(ligne.prixUnitaireTTC)}
                   </p>

@@ -9,15 +9,17 @@ export const dynamic = "force-dynamic";
 export default async function ProduitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [produit, magasins] = await Promise.all([
+  const [produit, magasins, fournisseurs] = await Promise.all([
     prisma.produit.findUnique({
       where: { id },
       include: {
         stocks: { include: { magasin: true }, orderBy: { magasin: { nom: "asc" } } },
         historiquePrix: { orderBy: { effectifA: "desc" } },
+        fournisseur: true,
       },
     }),
     prisma.magasin.findMany({ orderBy: { nom: "asc" } }),
+    prisma.fournisseur.findMany({ orderBy: { nom: "asc" } }),
   ]);
 
   if (!produit) {
@@ -39,7 +41,7 @@ export default async function ProduitPage({ params }: { params: Promise<{ id: st
         <BarreUtilisateur />
       </div>
 
-      <ProduitDetailClient produit={produit} magasins={magasins} />
+      <ProduitDetailClient produit={produit} magasins={magasins} fournisseurs={fournisseurs} />
     </main>
   );
 }

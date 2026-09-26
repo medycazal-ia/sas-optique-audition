@@ -29,6 +29,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     creeA: proposition.creeA,
     lignes: proposition.lignes.map((l) => ({
       libelle: l.libelleProduit,
+      description: l.descriptionProduit,
       quantite: l.quantite,
       prixUnitaireTTC: l.prixUnitaireTTC,
     })),

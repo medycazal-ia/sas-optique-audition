@@ -11,6 +11,10 @@ const EMOJI_TYPE: Record<TypeProduit, string> = {
   VERRE: "🔬",
   LENTILLE: "👁️",
   ACCESSOIRE: "🧰",
+  APPAREIL_AUDITIF: "🦻",
+  ECOUTEUR: "🎧",
+  PILE_AUDITIVE: "🔋",
+  ACCESSOIRE_AUDITIF: "🧰",
 };
 
 const LIBELLE_TYPE: Record<TypeProduit, string> = {
@@ -18,9 +22,22 @@ const LIBELLE_TYPE: Record<TypeProduit, string> = {
   VERRE: "Verre",
   LENTILLE: "Lentille",
   ACCESSOIRE: "Accessoire",
+  APPAREIL_AUDITIF: "Appareil auditif",
+  ECOUTEUR: "Écouteur",
+  PILE_AUDITIVE: "Pile auditive",
+  ACCESSOIRE_AUDITIF: "Accessoire auditif",
 };
 
-const TYPES: TypeProduit[] = ["MONTURE", "VERRE", "LENTILLE", "ACCESSOIRE"];
+const TYPES: TypeProduit[] = [
+  "MONTURE",
+  "VERRE",
+  "LENTILLE",
+  "ACCESSOIRE",
+  "APPAREIL_AUDITIF",
+  "ECOUTEUR",
+  "PILE_AUDITIVE",
+  "ACCESSOIRE_AUDITIF",
+];
 
 export default async function CatalogueProduitsPage({
   searchParams,
@@ -58,12 +75,26 @@ export default async function CatalogueProduitsPage({
           <p className="text-sm font-semibold uppercase tracking-widest text-teal-500">Produits & catalogue</p>
           <h1 className="text-3xl font-extrabold text-neutral-900">Catalogue</h1>
         </div>
-        <Link
-          href="/produits/nouveau"
-          className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:scale-105 hover:bg-neutral-700"
-        >
-          + Nouveau produit
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/fournisseurs"
+            className="rounded-full border border-neutral-300 bg-white px-5 py-2.5 text-sm font-semibold text-neutral-700 shadow-sm transition hover:scale-105 hover:bg-neutral-50"
+          >
+            🚚 Fournisseurs
+          </Link>
+          <Link
+            href="/produits/import"
+            className="rounded-full border border-neutral-300 bg-white px-5 py-2.5 text-sm font-semibold text-neutral-700 shadow-sm transition hover:scale-105 hover:bg-neutral-50"
+          >
+            📄 Import / export CSV
+          </Link>
+          <Link
+            href="/produits/nouveau"
+            className="rounded-full bg-neutral-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:scale-105 hover:bg-neutral-700"
+          >
+            + Nouveau produit
+          </Link>
+        </div>
       </div>
 
       <form className="mt-6 flex flex-wrap gap-3" method="get">

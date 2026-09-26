@@ -56,6 +56,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         create: proposition.lignes.map((l) => ({
           produitId: l.produitId,
           libelleProduit: l.libelleProduit,
+          descriptionProduit: l.descriptionProduit,
           quantite: l.quantite,
         })),
       },

@@ -350,22 +350,53 @@ model Magasin {
   stocks Stock[]
 }
 
-/// Article catalogue : monture, verre, lentille ou accessoire (V1 optique).
-/// Le tarif courant (prixTTC) est toujours celui affiché — jamais une valeur
-/// mise en cache : chaque changement crée une ligne HistoriquePrix plutôt que
-/// d'écraser silencieusement l'ancien prix (traçabilité en cas de litige).
+/// Article catalogue : monture, verre, lentille ou accessoire (V1 optique),
+/// ou appareil auditif/accessoire audio (voir TypeProduit). Le tarif courant
+/// (prixTTC) est toujours celui affiché — jamais une valeur mise en cache :
+/// chaque changement crée une ligne HistoriquePrix plutôt que d'écraser
+/// silencieusement l'ancien prix (traçabilité en cas de litige).
+///
+/// Colonnes reprises du modèle d'import CSV en masse (voir
+/// src/lib/importProduitsCsv.ts) : toutes optionnelles à la création/import
+/// sauf reference/type/prixTTC, mais toutes présentes dans le formulaire de
+/// création produit. `description` n'est jamais saisie librement : elle est
+/// recalculée automatiquement (voir src/lib/descriptionProduit.ts) à partir
+/// de modele/taille/coloris/nomenclature/prixTTC/tauxTva/prixVenteHT, pour
+/// être reprise telle quelle dans les devis/propositions et les documents
+/// (actuels et à venir) à destination des mutuelles, de la sécurité sociale
+/// et du client.
 model Produit {
-  id           String        @id @default(cuid())
-  creeA        DateTime      @default(now())
-  modifieA     DateTime      @updatedAt
-  type         TypeProduit
-  reference    String        @unique
-  marque       String
-  modele       String
-  description  String?
-  prixTTC      Int // en centimes — évite les erreurs d'arrondi flottant sur un prix
-  statut       StatutProduit @default(ACTIF)
-  garantieMois Int? // durée de garantie constructeur, si connue — voir module SAV
+  id                 String         @id @default(cuid())
+  creeA              DateTime       @default(now())
+  modifieA           DateTime       @updatedAt
+  type               TypeProduit
+  activite           TypeOrdonnance @default(OPTIQUE) // ligne d'activité (optique/audition) — colonne CSV "activité"
+  reference          String         @unique
+  qrcode             String?        @unique // code du QR apposé sur l'article — distinct de `reference` (peut provenir d'un système externe) ; à défaut, le QR généré par l'application encode `reference`
+  categorie          String? // sous-catégorie libre, distincte de `type` — colonne CSV "catégorie"
+  marque             String
+  modele             String // "nom (modèle)" dans le CSV
+  taille             String?
+  coloris            String?
+  nomenclature       String? // code LPP/nomenclature sécurité sociale, si applicable
+  description        String? // recalculée automatiquement — voir commentaire ci-dessus, jamais éditable directement
+  prixAchat          Int? // en centimes
+  coefficient        Float?
+  prixTTC            Int // en centimes — "prix public TTC"
+  tauxTva            Float? // ex. 0.2 pour 20 %
+  prixVenteHT        Int? // en centimes
+  plafondRemise      Float? // ex. 0.1 pour 10 %
+  remarque           String?
+  dateDerniereSortie DateTime?
+  statut             StatutProduit  @default(ACTIF)
+  garantieMois       Int? // durée de garantie constructeur, si connue — voir module SAV
+
+  // Fournisseur de l'article — annuaire séparé (contact, SAV, conditions
+  // commerciales). Lien interne : jamais imprimé sur un document commercial
+  // (devis, facture), transmis uniquement avec la marque sur les demandes de
+  // prise en charge mutuelle/sécurité sociale — voir PropositionLigne.
+  fournisseurId String?
+  fournisseur   Fournisseur? @relation(fields: [fournisseurId], references: [id])
 
   stocks            Stock[]
   historiquePrix    HistoriquePrix[]
@@ -374,6 +405,8 @@ model Produit {
 
   @@index([type])
   @@index([marque])
+  @@index([activite])
+  @@index([fournisseurId])
 }
 
 enum TypeProduit {
@@ -381,12 +414,38 @@ enum TypeProduit {
   VERRE
   LENTILLE
   ACCESSOIRE
+  APPAREIL_AUDITIF
+  ECOUTEUR
+  PILE_AUDITIVE
+  ACCESSOIRE_AUDITIF
 }
 
 enum StatutProduit {
   ACTIF
   RUPTURE
   DISCONTINUE
+}
+
+/// Annuaire des fournisseurs par référence article : nom, contact commercial,
+/// SAV, conditions commerciales, remarques. Le lien fournisseur reste interne
+/// à l'application : jamais imprimé sur les documents commerciaux (devis,
+/// facture) — seule la marque l'est — mais transmis (nom du fournisseur +
+/// marque) sur les demandes de prise en charge mutuelle/sécurité sociale, où
+/// il est nécessaire au traitement du dossier (voir PropositionLigne et
+/// src/lib/demandesPriseEnCharge.ts).
+model Fournisseur {
+  id                     String   @id @default(cuid())
+  creeA                  DateTime @default(now())
+  modifieA               DateTime @updatedAt
+  nom                    String   @unique
+  contact                String?
+  sav                    String?
+  conditionsCommerciales String?
+  remarques              String?
+
+  produits Produit[]
+
+  @@index([nom])
 }
 
 /// Disponibilité d'un produit par magasin. "La disponibilité multi-magasin
@@ -499,6 +558,17 @@ model PropositionLigne {
   quantite        Int         @default(1)
   prixUnitaireTTC Int // instantané, en centimes
 
+  // Instantanés supplémentaires pris au moment de l'ajout, comme
+  // libelleProduit/prixUnitaireTTC ci-dessus — jamais recalculés après coup.
+  // descriptionProduit et marqueProduit sont repris dans les devis/documents
+  // publics (marque seule sur devis/facture, jamais le fournisseur).
+  // fournisseurNom n'est jamais imprimé sur devis/facture : transmis
+  // uniquement, avec marqueProduit, sur les demandes de prise en charge
+  // mutuelle/sécurité sociale, où il est nécessaire au traitement.
+  descriptionProduit String?
+  marqueProduit      String?
+  fournisseurNom     String?
+
   @@index([propositionId])
 }
 
@@ -610,15 +680,16 @@ enum StatutCommande {
 }
 
 model CommandeLigne {
-  id              String   @id @default(cuid())
-  commandeId      String
-  commande        Commande @relation(fields: [commandeId], references: [id])
-  produitId       String
-  produit         Produit  @relation(fields: [produitId], references: [id])
-  libelleProduit  String // instantané, comme PropositionLigne
-  quantite        Int      @default(1)
-  prixUnitaireTTC Int? // instantané — renseigné pour une vente directe (pas de proposition dont dériver un prix)
-  numeroSerie     String? // renseigné au contrôle — utile pour les appareils auditifs
+  id                 String   @id @default(cuid())
+  commandeId         String
+  commande           Commande @relation(fields: [commandeId], references: [id])
+  produitId          String
+  produit            Produit  @relation(fields: [produitId], references: [id])
+  libelleProduit     String // instantané, comme PropositionLigne
+  descriptionProduit String? // instantané de Produit.description — repris sur la facture (voir PropositionLigne)
+  quantite           Int      @default(1)
+  prixUnitaireTTC    Int? // instantané — renseigné pour une vente directe (pas de proposition dont dériver un prix)
+  numeroSerie        String? // renseigné au contrôle — utile pour les appareils auditifs
 
   savs SAV[]
 

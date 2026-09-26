@@ -2,18 +2,26 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { HistoriquePrix, Magasin, Produit, Stock } from "@prisma/client";
+import type { Fournisseur, HistoriquePrix, Magasin, Produit, Stock } from "@prisma/client";
 import Carrousel from "@/components/Carrousel";
 import { formaterPrix, parserPrixEnCentimes } from "@/lib/argent";
 
 type StockAvecMagasin = Stock & { magasin: Magasin };
-type ProduitAvecRelations = Produit & { stocks: StockAvecMagasin[]; historiquePrix: HistoriquePrix[] };
+type ProduitAvecRelations = Produit & {
+  stocks: StockAvecMagasin[];
+  historiquePrix: HistoriquePrix[];
+  fournisseur: Fournisseur | null;
+};
 
 const LIBELLE_TYPE: Record<string, string> = {
   MONTURE: "Monture",
   VERRE: "Verre",
   LENTILLE: "Lentille",
   ACCESSOIRE: "Accessoire",
+  APPAREIL_AUDITIF: "Appareil auditif",
+  ECOUTEUR: "Écouteur",
+  PILE_AUDITIVE: "Pile auditive",
+  ACCESSOIRE_AUDITIF: "Accessoire auditif",
 };
 
 const EMOJI_TYPE: Record<string, string> = {
@@ -21,14 +29,20 @@ const EMOJI_TYPE: Record<string, string> = {
   VERRE: "🔬",
   LENTILLE: "👁️",
   ACCESSOIRE: "🧰",
+  APPAREIL_AUDITIF: "🦻",
+  ECOUTEUR: "🎧",
+  PILE_AUDITIVE: "🔋",
+  ACCESSOIRE_AUDITIF: "🧰",
 };
 
 export default function ProduitDetailClient({
   produit,
   magasins,
+  fournisseurs,
 }: {
   produit: ProduitAvecRelations;
   magasins: Magasin[];
+  fournisseurs: Fournisseur[];
 }) {
   const totalStock = produit.stocks.reduce((s, x) => s + x.quantite, 0);
 
@@ -53,8 +67,9 @@ export default function ProduitDetailClient({
 
       <div className="mt-8">
         <Carrousel>
-          <FicheProduit produit={produit} />
+          <FicheProduit produit={produit} fournisseurs={fournisseurs} />
           <StockParMagasin produit={produit} magasins={magasins} />
+          <QrCodeCarte produit={produit} />
           <HistoriquePrixCarte historiquePrix={produit.historiquePrix} />
         </Carrousel>
       </div>
@@ -89,22 +104,26 @@ function Carte({
   );
 }
 
-function FicheProduit({ produit }: { produit: Produit }) {
+function FicheProduit({ produit, fournisseurs }: { produit: Produit; fournisseurs: Fournisseur[] }) {
   const router = useRouter();
-  const [champs, setChamps] = useState<{
-    marque: string;
-    modele: string;
-    description: string;
-    statut: string;
-    prix: string;
-    garantieMois: string;
-  }>({
+  const [champs, setChamps] = useState({
     marque: produit.marque,
     modele: produit.modele,
-    description: produit.description ?? "",
-    statut: produit.statut,
+    statut: produit.statut as string,
     prix: (produit.prixTTC / 100).toFixed(2).replace(".", ","),
     garantieMois: produit.garantieMois?.toString() ?? "",
+    qrcode: produit.qrcode ?? "",
+    categorie: produit.categorie ?? "",
+    taille: produit.taille ?? "",
+    coloris: produit.coloris ?? "",
+    nomenclature: produit.nomenclature ?? "",
+    prixAchat: produit.prixAchat != null ? (produit.prixAchat / 100).toFixed(2).replace(".", ",") : "",
+    coefficient: produit.coefficient?.toString() ?? "",
+    tauxTva: produit.tauxTva != null ? (produit.tauxTva * 100).toString() : "",
+    prixVenteHT: produit.prixVenteHT != null ? (produit.prixVenteHT / 100).toFixed(2).replace(".", ",") : "",
+    plafondRemise: produit.plafondRemise != null ? (produit.plafondRemise * 100).toString() : "",
+    remarque: produit.remarque ?? "",
+    fournisseurId: produit.fournisseurId ?? "",
   });
   const [envoi, setEnvoi] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -112,7 +131,7 @@ function FicheProduit({ produit }: { produit: Produit }) {
   async function enregistrer() {
     const prixTTC = parserPrixEnCentimes(champs.prix);
     if (prixTTC === null) {
-      setMessage("Prix invalide.");
+      setMessage("Prix TTC invalide.");
       return;
     }
     setEnvoi(true);
@@ -123,10 +142,21 @@ function FicheProduit({ produit }: { produit: Produit }) {
       body: JSON.stringify({
         marque: champs.marque,
         modele: champs.modele,
-        description: champs.description || null,
         statut: champs.statut,
         prixTTC,
         garantieMois: champs.garantieMois.trim() ? Number(champs.garantieMois) : null,
+        qrcode: champs.qrcode || null,
+        categorie: champs.categorie || null,
+        taille: champs.taille || null,
+        coloris: champs.coloris || null,
+        nomenclature: champs.nomenclature || null,
+        prixAchat: champs.prixAchat.trim() ? parserPrixEnCentimes(champs.prixAchat) : null,
+        coefficient: champs.coefficient.trim() ? Number(champs.coefficient.replace(",", ".")) : null,
+        tauxTva: champs.tauxTva.trim() ? Number(champs.tauxTva.replace(",", ".")) / 100 : null,
+        prixVenteHT: champs.prixVenteHT.trim() ? parserPrixEnCentimes(champs.prixVenteHT) : null,
+        plafondRemise: champs.plafondRemise.trim() ? Number(champs.plafondRemise.replace(",", ".")) / 100 : null,
+        remarque: champs.remarque || null,
+        fournisseurId: champs.fournisseurId || null,
       }),
     });
     setEnvoi(false);
@@ -160,14 +190,126 @@ function FicheProduit({ produit }: { produit: Produit }) {
             />
           </label>
         </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <label className="text-sm">
+            Catégorie
+            <input
+              value={champs.categorie}
+              onChange={(e) => setChamps({ ...champs, categorie: e.target.value })}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            Taille
+            <input
+              value={champs.taille}
+              onChange={(e) => setChamps({ ...champs, taille: e.target.value })}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            Coloris
+            <input
+              value={champs.coloris}
+              onChange={(e) => setChamps({ ...champs, coloris: e.target.value })}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+
         <label className="block text-sm">
-          Prix TTC (€)
+          Nomenclature (code LPP/sécurité sociale)
           <input
-            value={champs.prix}
-            onChange={(e) => setChamps({ ...champs, prix: e.target.value })}
+            value={champs.nomenclature}
+            onChange={(e) => setChamps({ ...champs, nomenclature: e.target.value })}
             className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           />
         </label>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-sm">
+            Prix achat (€)
+            <input
+              value={champs.prixAchat}
+              onChange={(e) => setChamps({ ...champs, prixAchat: e.target.value })}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            Coefficient
+            <input
+              value={champs.coefficient}
+              onChange={(e) => setChamps({ ...champs, coefficient: e.target.value })}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <label className="text-sm">
+            Prix public TTC (€)
+            <input
+              value={champs.prix}
+              onChange={(e) => setChamps({ ...champs, prix: e.target.value })}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            Taux TVA (%)
+            <input
+              value={champs.tauxTva}
+              onChange={(e) => setChamps({ ...champs, tauxTva: e.target.value })}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            Prix vente HT (€)
+            <input
+              value={champs.prixVenteHT}
+              onChange={(e) => setChamps({ ...champs, prixVenteHT: e.target.value })}
+              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+
+        <label className="block text-sm">
+          Plafond remise (%)
+          <input
+            value={champs.plafondRemise}
+            onChange={(e) => setChamps({ ...champs, plafondRemise: e.target.value })}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label className="block text-sm">
+          QR code (si différent de la référence)
+          <input
+            value={champs.qrcode}
+            onChange={(e) => setChamps({ ...champs, qrcode: e.target.value })}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label className="block text-sm">
+          Fournisseur
+          <select
+            value={champs.fournisseurId}
+            onChange={(e) => setChamps({ ...champs, fournisseurId: e.target.value })}
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          >
+            <option value="">— Aucun —</option>
+            {fournisseurs.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.nom}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-xs text-neutral-400">
+            Interne — jamais imprimé sur devis/facture, transmis avec la marque sur les demandes de prise en charge.
+          </span>
+        </label>
+
         <label className="block text-sm">
           Statut
           <select
@@ -190,14 +332,18 @@ function FicheProduit({ produit }: { produit: Produit }) {
           />
         </label>
         <label className="block text-sm">
-          Description
+          Remarque
           <textarea
-            value={champs.description}
-            onChange={(e) => setChamps({ ...champs, description: e.target.value })}
-            rows={3}
+            value={champs.remarque}
+            onChange={(e) => setChamps({ ...champs, remarque: e.target.value })}
+            rows={2}
             className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           />
         </label>
+        <div className="rounded-md bg-neutral-50 p-3 text-xs text-neutral-500">
+          <span className="font-medium text-neutral-600">Description (générée automatiquement) : </span>
+          {produit.description || "—"}
+        </div>
       </div>
       <div className="mt-4 flex items-center gap-3">
         <button
@@ -208,6 +354,39 @@ function FicheProduit({ produit }: { produit: Produit }) {
           {envoi ? "Enregistrement…" : "Enregistrer"}
         </button>
         {message && <span className="text-sm text-neutral-500">{message}</span>}
+      </div>
+    </Carte>
+  );
+}
+
+function QrCodeCarte({ produit }: { produit: Produit }) {
+  return (
+    <Carte
+      titre="QR code"
+      sousTitre="À imprimer/apposer sur l'article — ouvre directement la page de scan."
+      emoji="🔳"
+      degrade="from-fuchsia-400 to-indigo-500"
+    >
+      <div className="flex flex-col items-center gap-4">
+        {/* eslint-disable-next-line @next/next/no-img-element -- image générée dynamiquement par une route API, pas un asset optimisable par next/image */}
+        <img
+          src={`/api/produits/${produit.id}/qrcode`}
+          alt={`QR code du produit ${produit.reference}`}
+          width={220}
+          height={220}
+          className="rounded-xl border border-neutral-200"
+        />
+        <p className="text-center text-sm text-neutral-500">
+          Scanné depuis un smartphone/tablette connecté à l&apos;application, il ouvre directement la saisie de stock
+          de cet article.
+        </p>
+        <a
+          href={`/api/produits/${produit.id}/qrcode`}
+          download={`qrcode-${produit.reference}.png`}
+          className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+        >
+          Télécharger le PNG
+        </a>
       </div>
     </Carte>
   );
