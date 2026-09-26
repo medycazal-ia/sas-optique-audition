@@ -71,6 +71,30 @@ services:
       # cette valeur de test, donc n'atteint pas réellement les mutuelles.
       - key: RESEND_FROM
         sync: false
+      # Recherche automatique des accords/refus de prise en charge reçus
+      # par mail (carte Mutuelle & tiers payant, Super Admin > Boîtes mail
+      # tiers payant) — voir lib/traitementMailAccordMutuelle.ts. Ce
+      # logiciel ne se connecte à aucune boîte mail lui-même : un scénario
+      # Make (make.com) surveille la/les boîte(s) et POSTe chaque mail
+      # pertinent à /api/automatisations/accord-mutuelle-entrant.
+      # ACCORD_MUTUELLE_WEBHOOK_SECRET : jeton partagé arbitraire (à générer
+      # soi-même) — le même doit être collé dans l'en-tête Authorization du
+      # scénario Make. Sans lui, ce webhook répond 503 (rien d'autre n'est
+      # affecté).
+      - key: ACCORD_MUTUELLE_WEBHOOK_SECRET
+        sync: false
+      # MAKE_API_TOKEN : jeton d'API personnel (Make > profil > API), pour
+      # que le bouton "Relancer la recherche" (affiché sur un refus) puisse
+      # déclencher une exécution immédiate du scénario Make plutôt que
+      # d'attendre son prochain passage planifié. Sans lui, ce bouton
+      # échoue proprement (message d'erreur clair) — la recherche
+      # automatique quotidienne continue de fonctionner normalement.
+      - key: MAKE_API_TOKEN
+        sync: false
+      # Zone Make du compte (visible dans l'URL, ex. eu1.make.com,
+      # eu2.make.com, us1.make.com...) — par défaut eu1.make.com.
+      - key: MAKE_ZONE
+        sync: false
       # Signature électronique du consentement RGPD par code SMS (carte
       # RGPD) — compte et clés à créer sur twilio.com, jamais stockés dans
       # ce fichier ni dans git. TWILIO_FROM est le numéro Twilio expéditeur

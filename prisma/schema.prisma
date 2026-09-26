@@ -368,6 +368,28 @@ model CaisseAmo {
   @@index([nom])
 }
 
+/// Référence des boîtes mail surveillées pour la recherche automatique des
+/// accords/refus de prise en charge (voir lib/traitementMailAccordMutuelle.ts).
+/// Ne contient AUCUN identifiant de connexion : la connexion réelle à la
+/// boîte (OAuth Gmail/Microsoft 365) est détenue par un scénario Make dédié
+/// — cette table sert à documenter quelle boîte couvre quelles plateformes,
+/// et à relier chaque boîte à son scénario Make pour la relance manuelle
+/// ("Refus" cliquable, voir /api/dossiers/:id/recherche-accord).
+model BoiteMailTiersPayant {
+  id                 String    @id @default(cuid())
+  creeA              DateTime  @default(now())
+  modifieA           DateTime  @updatedAt
+  nom                String // libellé libre, ex. "Boîte Gmail principale"
+  email              String    @unique
+  plateformes        String[] // plateformes/mutuelles couvertes (comparé à Mutuelle.nom/plateforme) — vide = boîte par défaut, pour toute plateforme non attribuée ailleurs
+  makeScenarioId     Int? // scénario Make qui surveille cette boîte, pour le déclenchement manuel immédiat
+  actif              Boolean   @default(true)
+  derniereReceptionA DateTime? // horodatage du dernier mail traité reçu de cette boîte, informatif
+  remarques          String?
+
+  @@index([email])
+}
+
 enum TypeOrdonnance {
   OPTIQUE
   AUDITION
