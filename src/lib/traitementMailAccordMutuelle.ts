@@ -27,8 +27,32 @@ export type PayloadMailEntrant = {
   subject: string;
   bodyText: string;
   messageId?: string;
-  attachments: { fileName: string; contentType: string; contentBase64: string }[];
+  // `unknown` plutôt que `string` : certains scénarios Make sérialisent un
+  // champ binaire mal mappé en objet plutôt qu'en base64 (voir versBuffer
+  // ci-dessous) — mieux vaut le typer honnêtement que de faire confiance à
+  // l'appelant.
+  attachments: { fileName: string; contentType: string; contentBase64: unknown }[];
 };
+
+/**
+ * Décode une pièce jointe reçue du webhook — normalement une chaîne
+ * base64, mais tolère aussi un objet "Buffer" JSON (`{type:"Buffer",
+ * data:[...]}`) ou un tableau d'octets brut : un scénario Make mal
+ * configuré (champ binaire mappé sans passer par `base64(...)`) peut
+ * envoyer l'une ou l'autre forme selon le connecteur mail utilisé.
+ */
+function versBuffer(valeur: unknown): Buffer | null {
+  if (typeof valeur === "string" && valeur.trim()) {
+    return Buffer.from(valeur, "base64");
+  }
+  if (Array.isArray(valeur)) {
+    return Buffer.from(valeur as number[]);
+  }
+  if (valeur && typeof valeur === "object" && Array.isArray((valeur as { data?: unknown }).data)) {
+    return Buffer.from((valeur as { data: number[] }).data);
+  }
+  return null;
+}
 
 export type ResultatTraitementMail = {
   traite: boolean; // false si le mail a été ignoré (mots-clés absents)
@@ -70,9 +94,13 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
     mutuelleNom: null,
   };
   const piece = payload.attachments.find((a) => a.contentBase64 && a.fileName);
-  if (piece) {
+  const contenuPiece = piece ? versBuffer(piece.contentBase64) : null;
+  if (piece && !contenuPiece) {
+    console.error("traiterMailAccordMutuelle — format de pièce jointe non reconnu :", typeof piece.contentBase64);
+  }
+  if (piece && contenuPiece) {
     try {
-      extraction = await extraireAccordMutuelle(Buffer.from(piece.contentBase64, "base64"), piece.fileName);
+      extraction = await extraireAccordMutuelle(contenuPiece, piece.fileName);
     } catch (e) {
       console.error("traiterMailAccordMutuelle — échec extraction pièce jointe :", e);
     }
@@ -138,9 +166,9 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
   // Document : enregistré sur le dossier dès qu'on l'a, dossier identifié —
   // qu'on puisse ou non appliquer automatiquement la transition de statut.
   let documentEnregistre = false;
-  if (piece) {
+  if (piece && contenuPiece) {
     try {
-      const { cheminStockage } = await enregistrerFichier(personneId, piece.fileName, Buffer.from(piece.contentBase64, "base64"));
+      const { cheminStockage } = await enregistrerFichier(personneId, piece.fileName, contenuPiece);
       await prisma.document.create({ data: { personneId, type: "REPONSE_MUTUELLE", nomFichier: piece.fileName, cheminStockage } });
       documentEnregistre = true;
     } catch (e) {

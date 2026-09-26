@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
 
   const attachments = Array.isArray(body.attachments)
     ? body.attachments.filter(
-        (a: unknown): a is { fileName: string; contentType: string; contentBase64: string } =>
+        (a: unknown): a is { fileName: string; contentType: string; contentBase64: unknown } =>
           Boolean(a && typeof a === "object" && "fileName" in a && "contentBase64" in a),
       )
     : [];
