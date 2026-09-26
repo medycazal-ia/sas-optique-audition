@@ -2005,23 +2005,59 @@ function DemandeLigne({
           )}
         </div>
       )}
-      {demande.statut === "REFUS" && (
-        <p className="mt-2 text-xs text-red-600">
-          Refusé{demande.motifRefus ? ` — ${demande.motifRefus}` : ""} ·{" "}
-          <a href={`/api/demandes-mutuelle/${demande.id}/formulaire`} target="_blank" rel="noopener noreferrer" className="underline">
-            🖨️ Imprimer
-          </a>
-        </p>
-      )}
+      {demande.statut === "REFUS" && <RefusInfos personneId={personne.id} motifRefus={demande.motifRefus} demandeId={demande.id} />}
     </li>
   );
 }
 
 /**
- * Affichage + action "Marquer reçu" du code paiement d'une demande à
- * l'accord — voir lib/codePaiement.ts. Simple rapprochement (pseudo tiers
- * payant) : jamais un mouvement d'argent réel déclenché par le logiciel.
+ * Affichage d'un refus, à l'endroit où apparaîtrait le code paiement en cas
+ * d'accord — cliquable pour relancer immédiatement la recherche automatique
+ * (voir /api/dossiers/:id/recherche-accord et lib/traitementMailAccordMutuelle.ts),
+ * par exemple si une nouvelle prise en charge a depuis été accordée par
+ * mail, ou pour vérifier avant de refaire la demande.
  */
+function RefusInfos({ personneId, demandeId, motifRefus }: { personneId: string; demandeId: string; motifRefus: string | null }) {
+  const router = useRouter();
+  const [enCours, setEnCours] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function relancer() {
+    setEnCours(true);
+    setMessage(null);
+    const reponse = await fetch(`/api/dossiers/${personneId}/recherche-accord`, { method: "POST" });
+    const data = await reponse.json().catch(() => ({}));
+    setEnCours(false);
+    if (reponse.ok && data.declenche) {
+      setMessage("Recherche relancée — le résultat apparaîtra ici sous peu si un accord est retrouvé par mail.");
+      router.refresh();
+    } else {
+      setMessage(data.erreur ?? "Recherche non déclenchée.");
+    }
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-red-700">
+          ❌ Refus{motifRefus ? ` — ${motifRefus}` : ""}
+        </p>
+        <a href={`/api/demandes-mutuelle/${demandeId}/formulaire`} target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs text-red-700 underline">
+          🖨️ Imprimer
+        </a>
+      </div>
+      <button
+        onClick={relancer}
+        disabled={enCours}
+        className="mt-1 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+      >
+        {enCours ? "…" : "🔍 Relancer la recherche par mail"}
+      </button>
+      {message && <p className="mt-1 text-xs text-red-600">{message}</p>}
+    </div>
+  );
+}
+
 /** Un jeton fictif (voir lib/codePaiement.ts) est 32 caractères hexadécimaux — un vrai numéro d'accord mutuelle ne l'est jamais. */
 function estCodePaiementFictif(code: string): boolean {
   return /^[0-9a-f]{32}$/.test(code);
