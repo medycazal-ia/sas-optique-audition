@@ -214,14 +214,33 @@ santé libéraux"](https://www.cnil.fr/fr/rgpd-et-professionnels-de-sante-libera
 — que les données de santé (correction, audiogramme) sont traitées au
 titre du soin sans nécessiter de consentement (article 9.2.h du RGPD),
 mais que contacter le client par email/SMS/téléphone à des fins autres que
-le soin exige un consentement explicite et distinct par canal. Deux façons
-de traiter cette étape :
+le soin exige un consentement explicite et distinct par canal. Quatre
+façons de traiter cette étape :
 - **À l'écran** : le client valide ses choix directement dans l'appli.
+- **Signature au stylet/à l'écran tactile** (`src/components/PadSignature.tsx`) :
+  capture au doigt, à la souris ou au stylet via l'API standard *Pointer
+  Events*, qui reçoit nativement les événements d'une tablette graphique
+  (Wacom Intuos ou équivalent, une fois son pilote installé sur le poste),
+  pression comprise. **Limite honnête** : un pad de signature Wacom dédié
+  (série STU, avec son propre petit écran) ne peut pas s'intégrer
+  directement depuis une page web — ces boîtiers demandent le SDK
+  propriétaire du fabricant. Ce composant couvre ce qui est réellement
+  atteignable depuis le navigateur : n'importe quel pointeur, y compris une
+  tablette graphique standard.
+- **Code à usage unique par SMS** (`src/lib/signatureSms.ts`, via
+  [Twilio](https://twilio.com), `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/
+  `TWILIO_FROM`, `sync: false` dans `render.yaml`) — signature électronique
+  "simple" au sens eIDAS (un code envoyé sur un numéro vérifié vaut preuve
+  d'un acte positif), pas une signature "qualifiée" par prestataire de
+  confiance certifié. Sans ces clés, l'envoi échoue proprement.
 - **Sur papier** : un formulaire pré-rempli (`src/lib/consentementPdf.ts`,
   librairie [pdf-lib](https://pdf-lib.js.org/)) peut être imprimé, coché et
-  signé à la main — une fois signé, il doit être **scanné et téléversé**
-  (nouveau type de pièce `CONSENTEMENT_RGPD`, carte RGPD) : c'est la preuve
-  du recueil du consentement à conserver en cas de contrôle ou de litige.
+  signé à la main.
+
+Signature au stylet et formulaire papier aboutissent tous deux à un
+document image/PDF **scanné et téléversé** (nouveau type de pièce
+`CONSENTEMENT_RGPD`, carte RGPD) : c'est la preuve du recueil du
+consentement à conserver en cas de contrôle ou de litige.
 
 ## Conformité données de santé
 
