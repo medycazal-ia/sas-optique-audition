@@ -1,14 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { RoleUtilisateur } from "@prisma/client";
+import { champsObligatoiresManquantsMagasin } from "@/lib/entiteLegale";
 
 type Magasin = {
   id: string;
   nom: string;
   ville: string | null;
+  adresse: string | null;
+  codePostal: string | null;
+  telephone: string | null;
+  email: string | null;
+  siret: string | null;
+  finess: string | null;
+  numeroAgrementOptique: string | null;
+  numeroAgrementAudio: string | null;
+  responsable: string | null;
   _count: { stocks: number; utilisateurs: number };
 };
 
@@ -181,12 +191,82 @@ function FormulaireMagasin({ onEnregistre, onAnnuler }: { onEnregistre: () => vo
   );
 }
 
+const CHAMP = "mt-1 w-full rounded-md border border-neutral-600 bg-neutral-900 px-2 py-1.5 text-xs text-white placeholder:text-neutral-500";
+
+type FicheMagasin = {
+  nom: string;
+  ville: string;
+  adresse: string;
+  codePostal: string;
+  telephone: string;
+  email: string;
+  siret: string;
+  finess: string;
+  numeroAgrementOptique: string;
+  numeroAgrementAudio: string;
+  responsable: string;
+};
+
+function versFiche(m: Magasin): FicheMagasin {
+  return {
+    nom: m.nom,
+    ville: m.ville ?? "",
+    adresse: m.adresse ?? "",
+    codePostal: m.codePostal ?? "",
+    telephone: m.telephone ?? "",
+    email: m.email ?? "",
+    siret: m.siret ?? "",
+    finess: m.finess ?? "",
+    numeroAgrementOptique: m.numeroAgrementOptique ?? "",
+    numeroAgrementAudio: m.numeroAgrementAudio ?? "",
+    responsable: m.responsable ?? "",
+  };
+}
+
 function LigneMagasin({ magasin, onFait }: { magasin: Magasin; onFait: () => void }) {
   const [edition, setEdition] = useState(false);
-  const [nom, setNom] = useState(magasin.nom);
-  const [ville, setVille] = useState(magasin.ville ?? "");
+  const [fiche, setFiche] = useState<FicheMagasin>(() => versFiche(magasin));
   const [envoi, setEnvoi] = useState(false);
+  const [extraction, setExtraction] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const manquants = champsObligatoiresManquantsMagasin(versFiche(magasin));
+
+  function set<K extends keyof FicheMagasin>(cle: K, valeur: string) {
+    setFiche((f) => ({ ...f, [cle]: valeur }));
+  }
+
+  async function extraire() {
+    const fichier = inputRef.current?.files?.[0];
+    if (!fichier) return;
+    setExtraction(true);
+    setErreur(null);
+    try {
+      const donnees = new FormData();
+      donnees.append("fichier", fichier);
+      const reponse = await fetch("/api/super-admin/entite-legale/extraire", { method: "POST", body: donnees });
+      const data = await reponse.json();
+      if (!reponse.ok) {
+        setErreur(data.erreur ?? "Échec de l'extraction.");
+      } else {
+        setFiche((f) => ({
+          ...f,
+          ...(data.adresse ? { adresse: data.adresse } : {}),
+          ...(data.codePostal ? { codePostal: data.codePostal } : {}),
+          ...(data.ville ? { ville: data.ville } : {}),
+          ...(data.telephone ? { telephone: data.telephone } : {}),
+          ...(data.email ? { email: data.email } : {}),
+          ...(data.siret ? { siret: data.siret } : {}),
+        }));
+      }
+    } catch {
+      setErreur("Impossible de lire ce fichier.");
+    } finally {
+      setExtraction(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
 
   async function enregistrer() {
     setEnvoi(true);
@@ -194,7 +274,7 @@ function LigneMagasin({ magasin, onFait }: { magasin: Magasin; onFait: () => voi
     const reponse = await fetch(`/api/magasins/${magasin.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nom, ville }),
+      body: JSON.stringify(fiche),
     });
     setEnvoi(false);
     if (reponse.ok) {
@@ -223,18 +303,61 @@ function LigneMagasin({ magasin, onFait }: { magasin: Magasin; onFait: () => voi
   if (edition) {
     return (
       <li className="rounded-xl border border-neutral-700 bg-neutral-800/60 p-3">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <input
-            value={nom}
-            onChange={(e) => setNom(e.target.value)}
-            className="rounded-md border border-neutral-600 bg-neutral-900 px-2 py-1.5 text-sm text-white"
-          />
-          <input
-            value={ville}
-            onChange={(e) => setVille(e.target.value)}
-            placeholder="Ville"
-            className="rounded-md border border-neutral-600 bg-neutral-900 px-2 py-1.5 text-sm text-white placeholder:text-neutral-500"
-          />
+        <div className="mb-2 flex items-center gap-2">
+          <input ref={inputRef} type="file" accept="image/*,.pdf" className="text-xs text-neutral-300" />
+          <button
+            onClick={extraire}
+            disabled={extraction}
+            className="rounded-md border border-amber-400/60 px-2 py-1 text-xs font-medium text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"
+          >
+            {extraction ? "Extraction…" : "Extraire depuis un document"}
+          </button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <label className="text-xs text-neutral-300">
+            Nom
+            <input value={fiche.nom} onChange={(e) => set("nom", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300">
+            Responsable
+            <input value={fiche.responsable} onChange={(e) => set("responsable", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300">
+            SIRET (si distinct de la société)
+            <input value={fiche.siret} onChange={(e) => set("siret", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300 sm:col-span-2">
+            Adresse
+            <input value={fiche.adresse} onChange={(e) => set("adresse", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300">
+            Code postal
+            <input value={fiche.codePostal} onChange={(e) => set("codePostal", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300">
+            Ville
+            <input value={fiche.ville} onChange={(e) => set("ville", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300">
+            Téléphone
+            <input value={fiche.telephone} onChange={(e) => set("telephone", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300">
+            Email
+            <input value={fiche.email} onChange={(e) => set("email", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300">
+            N° FINESS
+            <input value={fiche.finess} onChange={(e) => set("finess", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300">
+            N° agrément opticien-lunetier
+            <input value={fiche.numeroAgrementOptique} onChange={(e) => set("numeroAgrementOptique", e.target.value)} className={CHAMP} />
+          </label>
+          <label className="text-xs text-neutral-300">
+            N° agrément audioprothésiste
+            <input value={fiche.numeroAgrementAudio} onChange={(e) => set("numeroAgrementAudio", e.target.value)} className={CHAMP} />
+          </label>
         </div>
         {erreur && <p className="mt-2 text-xs text-red-400">{erreur}</p>}
         <div className="mt-2 flex items-center gap-2">
@@ -254,37 +377,44 @@ function LigneMagasin({ magasin, onFait }: { magasin: Magasin; onFait: () => voi
   }
 
   return (
-    <li className="flex items-center justify-between gap-3 rounded-xl border border-neutral-700 bg-neutral-800/40 p-3">
-      <div className="min-w-0">
-        <p className="truncate font-medium text-white">{magasin.nom}</p>
-        <p className="truncate text-xs text-neutral-400">
-          {magasin.ville ? `${magasin.ville} · ` : ""}
-          {magasin._count.stocks} référence{magasin._count.stocks > 1 ? "s" : ""} en stock ·{" "}
-          {magasin._count.utilisateurs} compte{magasin._count.utilisateurs > 1 ? "s" : ""} rattaché
-          {magasin._count.utilisateurs > 1 ? "s" : ""}
+    <li className="rounded-xl border border-neutral-700 bg-neutral-800/40 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-medium text-white">{magasin.nom}</p>
+          <p className="truncate text-xs text-neutral-400">
+            {magasin.ville ? `${magasin.ville} · ` : ""}
+            {magasin._count.stocks} référence{magasin._count.stocks > 1 ? "s" : ""} en stock ·{" "}
+            {magasin._count.utilisateurs} compte{magasin._count.utilisateurs > 1 ? "s" : ""} rattaché
+            {magasin._count.utilisateurs > 1 ? "s" : ""}
+          </p>
+          {erreur && <p className="mt-1 text-xs text-red-400">{erreur}</p>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => setEdition(true)}
+            className="rounded-md border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
+          >
+            Fiche complète
+          </button>
+          <button
+            onClick={supprimer}
+            disabled={envoi || magasin._count.stocks > 0 || magasin._count.utilisateurs > 0}
+            title={
+              magasin._count.stocks > 0 || magasin._count.utilisateurs > 0
+                ? "Détachez d'abord le stock et les comptes rattachés."
+                : undefined
+            }
+            className="rounded-md border border-red-500/50 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            Supprimer
+          </button>
+        </div>
+      </div>
+      {manquants.length > 0 && (
+        <p className="mt-2 rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+          ⚠️ Manque : {manquants.join(", ")}
         </p>
-        {erreur && <p className="mt-1 text-xs text-red-400">{erreur}</p>}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <button
-          onClick={() => setEdition(true)}
-          className="rounded-md border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
-        >
-          Renommer
-        </button>
-        <button
-          onClick={supprimer}
-          disabled={envoi || magasin._count.stocks > 0 || magasin._count.utilisateurs > 0}
-          title={
-            magasin._count.stocks > 0 || magasin._count.utilisateurs > 0
-              ? "Détachez d'abord le stock et les comptes rattachés."
-              : undefined
-          }
-          className="rounded-md border border-red-500/50 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          Supprimer
-        </button>
-      </div>
+      )}
     </li>
   );
 }

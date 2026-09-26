@@ -2,10 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession, sessionEstDirecteurOuPlus } from "@/lib/auth";
+import { validerSiret } from "@/lib/entiteLegale";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-/** PATCH /api/magasins/:id — renommer un point de vente (nom, ville), réservé à un DIRECTEUR ou plus. */
+const CHAMPS_TEXTE = [
+  "ville",
+  "adresse",
+  "codePostal",
+  "telephone",
+  "email",
+  "finess",
+  "numeroAgrementOptique",
+  "numeroAgrementAudio",
+  "responsable",
+] as const;
+
+/**
+ * PATCH /api/magasins/:id — modifie la fiche d'un point de vente (nom et
+ * toutes les rubriques légales/opérationnelles — adresse, FINESS, numéros
+ * d'agrément...), réservé à un DIRECTEUR ou plus.
+ */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const session = await lireSession();
   if (!sessionEstDirecteurOuPlus(session)) {
@@ -16,7 +33,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
   const donnees: Record<string, unknown> = {};
   if (typeof body.nom === "string" && body.nom.trim()) donnees.nom = body.nom.trim();
-  if ("ville" in body) donnees.ville = typeof body.ville === "string" ? body.ville.trim() || null : null;
+  for (const champ of CHAMPS_TEXTE) {
+    if (champ in body) donnees[champ] = typeof body[champ] === "string" ? body[champ].trim() || null : null;
+  }
+  if ("siret" in body) {
+    const siret = typeof body.siret === "string" && body.siret.trim() ? validerSiret(body.siret) : null;
+    if (body.siret && !siret) {
+      return NextResponse.json({ erreur: "SIRET invalide (14 chiffres attendus)." }, { status: 400 });
+    }
+    donnees.siret = siret;
+  }
 
   if (Object.keys(donnees).length === 0) {
     return NextResponse.json({ erreur: "Aucun champ valide à mettre à jour." }, { status: 400 });
