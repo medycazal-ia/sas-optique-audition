@@ -12,9 +12,12 @@ import { extraireAccordMutuelle, extraireAccordMutuelleDepuisTexte, type Resulta
  *
  * Filtre de pertinence (avant toute extraction, pour limiter le bruit et le
  * coût OCR) : mots-clés habituels (accord/refus/rejet/pec) OU nom d'un
- * patient ayant une demande en attente — un modèle de mail de mutuelle sans
- * les mots-clés usuels ne doit pas passer à la trappe alors que le nom du
- * patient, lui, est toujours présent.
+ * patient ayant une demande en attente, cherché dans le sujet, le corps ET
+ * le nom des pièces jointes — un modèle de mail de mutuelle sans les
+ * mots-clés usuels ne doit pas passer à la trappe alors que le nom du
+ * patient, lui, est toujours présent quelque part (constaté en pratique :
+ * certains courriers de mutuelle ne nomment le patient que dans le nom du
+ * fichier joint, jamais dans le corps du mail ni dans le document lui-même).
  *
  * Principe de prudence ("il ne doit y avoir aucune erreur") : n'applique
  * automatiquement un changement de statut ACCORD/REFUS que lorsque le
@@ -83,18 +86,49 @@ function normaliser(texte: string): string {
 
 const STATUTS_EN_ATTENTE = ["A_ENVOYER", "ENVOYEE", "EN_ATTENTE"] as const;
 
-export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Promise<ResultatTraitementMail> {
-  const texteRecherche = `${payload.subject}\n${payload.bodyText}`;
-  const texteRechercheNormalise = normaliser(texteRecherche);
+type PersonneEnAttente = Awaited<ReturnType<typeof prisma.personne.findMany>>[number];
 
-  // Identification du dossier — NSS en priorité (le plus fiable), sinon
-  // nom+prénom exacts, sinon nom seul si le document ne donne pas le prénom.
+/** Retire l'extension d'un nom de fichier avant normalisation ("PEC Malika CAZAL.pdf" -> "pec malika cazal"). */
+function normaliserNomFichier(nomFichier: string): string {
+  return normaliser(nomFichier.replace(/\.[a-z0-9]{2,5}$/i, ""));
+}
+
+/**
+ * Cherche, parmi les patients ayant une demande en attente, celui dont le nom
+ * apparaît dans un texte déjà normalisé (sujet, corps du mail, ou nom des
+ * pièces jointes — voir les trois appels dans traiterMailAccordMutuelle,
+ * chacun dans l'ordre de priorité demandé : sujet, puis corps, puis nom du
+ * fichier, le contenu du document lui-même n'étant consulté qu'en dernier
+ * recours). N'en retourne un que si un seul nom correspond (ambiguïté entre
+ * plusieurs personnes -> null, jamais de choix arbitraire) ; complète le
+ * prénom seulement s'il apparaît aussi dans ce même texte, pour permettre
+ * l'identification nom+prénom la plus précise, sinon retomber sur le nom
+ * seul (voir la logique de rapprochement plus bas).
+ */
+function patientDepuisTexte(texteNormalise: string, personnes: PersonneEnAttente[]): { nom: string; prenom: string | null } | null {
+  if (!texteNormalise) return null;
+  const correspondances = new Map<string, PersonneEnAttente>();
+  for (const p of personnes) {
+    const nom = normaliser(p.nom);
+    if (nom.length >= 2 && texteNormalise.includes(nom)) {
+      correspondances.set(p.id, p);
+    }
+  }
+  if (correspondances.size !== 1) return null;
+
+  const personne = [...correspondances.values()][0];
+  const prenomTrouve = personne.prenom && texteNormalise.includes(normaliser(personne.prenom)) ? personne.prenom : null;
+  return { nom: personne.nom, prenom: prenomTrouve };
+}
+
+export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Promise<ResultatTraitementMail> {
+  // Identification du patient — ordre de priorité strict : sujet du mail,
+  // puis corps du mail, puis nom de la pièce jointe, et seulement en tout
+  // dernier recours le contenu du document lui-même (OCR/vision, le plus
+  // coûteux et le moins fiable des quatre — un vrai courrier de mutuelle nomme
+  // presque toujours le patient dans le sujet, le corps ou le nom du fichier).
   // DemandePriseEnCharge.personneId n'est pas une relation Prisma déclarée
   // (voir schema.prisma) : on rejoint donc les deux requêtes à la main.
-  // Récupéré avant le filtre mots-clés : le nom du patient, toujours présent
-  // dans un vrai mail de mutuelle, sert aussi de signal de pertinence (voir
-  // ci-dessous) — un modèle de mail sans les mots-clés habituels ne doit pas
-  // faire passer à la trappe un vrai accord/refus.
   const demandesEnAttente = await prisma.demandePriseEnCharge.findMany({
     where: { statut: { in: [...STATUTS_EN_ATTENTE] } },
   });
@@ -103,17 +137,31 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
   });
   const personneParId = new Map(personnesConcernees.map((p) => [p.id, p]));
 
-  const nomPatientEnAttentePresent = personnesConcernees.some((p) => {
-    const nom = normaliser(p.nom);
-    return nom.length >= 2 && texteRechercheNormalise.includes(nom);
-  });
+  const sujetNormalise = normaliser(payload.subject);
+  const corpsNormalise = normaliser(payload.bodyText);
+  const nomsFichiersNormalises = payload.attachments
+    .map((a) => a.fileName)
+    .filter(Boolean)
+    .map(normaliserNomFichier)
+    .join(" ");
 
-  if (!MOTS_CLES_PERTINENCE.test(texteRecherche) && !nomPatientEnAttentePresent) {
+  const patientSujet = patientDepuisTexte(sujetNormalise, personnesConcernees);
+  const patientCorps = patientDepuisTexte(corpsNormalise, personnesConcernees);
+  const patientFichier = patientDepuisTexte(nomsFichiersNormalises, personnesConcernees);
+  const patientDeterministe = patientSujet ?? patientCorps ?? patientFichier;
+
+  // Le nom du patient, toujours présent dans un vrai mail de mutuelle quelque
+  // part (sujet, corps ou nom du fichier), sert aussi de signal de
+  // pertinence : un modèle de mail sans les mots-clés habituels ne doit pas
+  // faire passer à la trappe un vrai accord/refus.
+  if (!MOTS_CLES_PERTINENCE.test(`${payload.subject}\n${payload.bodyText}`) && !patientDeterministe) {
     return { traite: false, apparie: false, personneId: null, demandeId: null, action: null, raison: "Mots-clés absents et aucun nom de patient en attente reconnu — mail ignoré." };
   }
 
-  // Extraction : la pièce jointe (document officiel) fait foi en priorité ;
-  // le corps du mail complète les champs qu'elle n'aurait pas fournis.
+  // Extraction depuis le document — toujours nécessaire pour statut/motif de
+  // refus/montant/numéro d'accord (uniquement disponibles là), même quand le
+  // patient est déjà identifié par les sources ci-dessus. Le corps du mail
+  // complète ces mêmes champs quand il n'y a pas de pièce jointe exploitable.
   let extraction: ResultatExtractionAccordMutuelle = {
     numeroAccord: null,
     statut: null,
@@ -144,6 +192,14 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
     } catch (e) {
       console.error("traiterMailAccordMutuelle — échec extraction texte :", e);
     }
+  }
+
+  // Le patient identifié par sujet/corps/nom-de-fichier prime toujours sur ce
+  // que l'OCR/l'IA a cru lire dans le document ou le corps du mail — ce
+  // n'est qu'à défaut de toute source déterministe qu'on fait confiance au
+  // contenu du document lui-même (patientNom/Prénom déjà dans `extraction`).
+  if (patientDeterministe) {
+    extraction = { ...extraction, patientNom: patientDeterministe.nom, patientPrenom: patientDeterministe.prenom };
   }
 
   // Rapprochement — demandesEnAttente/personnesConcernees/personneParId déjà
