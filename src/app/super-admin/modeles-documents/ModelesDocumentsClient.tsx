@@ -37,11 +37,14 @@ export default function ModelesDocumentsClient({ modeles }: { modeles: ModeleDoc
         }}
       >
         <div className="mx-auto max-w-3xl">
-          <Link href="/super-admin" className="text-sm text-neutral-500 underline hover:text-neutral-300">
+          <Link
+            href="/super-admin"
+            className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 px-4 py-1.5 text-sm font-semibold text-amber-300 hover:bg-amber-500/10 hover:text-amber-200"
+          >
             ← Super Admin
           </Link>
-          <h1 className="mt-4 text-2xl font-semibold">📄 Modèles de documents</h1>
-          <p className="mt-2 text-sm text-neutral-400">
+          <h1 className="mt-4 text-2xl font-semibold text-white">📄 Modèles de documents</h1>
+          <p className="mt-2 text-sm text-neutral-300">
             Configurez l&apos;en-tête, le texte d&apos;introduction et le pied de page de chaque type de document.
             Enregistrez plusieurs modèles par type et basculez entre eux à tout moment — les autres restent
             conservés, réactivables plus tard.
@@ -53,21 +56,21 @@ export default function ModelesDocumentsClient({ modeles }: { modeles: ModeleDoc
         {TYPES.map(({ valeur, libelle, emoji }) => {
           const modelesDuType = modeles.filter((m) => m.type === valeur);
           return (
-            <section key={valeur} className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
+            <section key={valeur} className="rounded-2xl border border-neutral-700 bg-neutral-900 p-5">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">
+                <h2 className="text-lg font-semibold text-white">
                   {emoji} {libelle}
                 </h2>
                 <button
                   onClick={() => setTypeEnCreation(valeur)}
-                  className="rounded-md border border-amber-500/40 px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-amber-500/10"
+                  className="rounded-md border border-amber-400/60 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-500/10"
                 >
                   + Nouveau modèle
                 </button>
               </div>
 
               {modelesDuType.length === 0 ? (
-                <p className="mt-3 text-sm text-neutral-500">
+                <p className="mt-3 text-sm text-neutral-300">
                   Aucun modèle configuré — les documents de ce type utilisent une mise en page sobre par défaut.
                 </p>
               ) : (
@@ -79,7 +82,7 @@ export default function ModelesDocumentsClient({ modeles }: { modeles: ModeleDoc
               )}
 
               {valeur === "DEVIS_NORMALISE" && (
-                <p className="mt-3 text-xs text-amber-500/80">
+                <p className="mt-3 text-xs text-amber-300">
                   ⚠️ Structure indicative (offre 100% Santé / marché libre) — à faire valider par un expert
                   métier/juridique avant tout usage réel avec des clients.
                 </p>
@@ -131,23 +134,23 @@ function LigneModele({
   }
 
   return (
-    <li className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
+    <li className="flex items-center justify-between rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2">
       <div className="flex items-center gap-2">
-        <span className="text-sm text-neutral-100">{modele.nom}</span>
+        <span className="text-sm font-medium text-white">{modele.nom}</span>
         {modele.actif && (
-          <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">Actif</span>
+          <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-300">Actif</span>
         )}
       </div>
       <div className="flex items-center gap-3">
         {!modele.actif && (
-          <button onClick={activer} disabled={envoi} className="text-xs font-medium text-amber-400 hover:underline disabled:opacity-50">
+          <button onClick={activer} disabled={envoi} className="text-xs font-semibold text-amber-300 hover:underline disabled:opacity-50">
             Activer
           </button>
         )}
-        <button onClick={onModifier} className="text-xs text-neutral-400 hover:underline">
+        <button onClick={onModifier} className="text-xs font-medium text-neutral-200 hover:underline">
           Modifier
         </button>
-        <button onClick={supprimer} disabled={envoi} className="text-xs text-red-400 hover:underline disabled:opacity-50">
+        <button onClick={supprimer} disabled={envoi} className="text-xs font-medium text-red-300 hover:underline disabled:opacity-50">
           Supprimer
         </button>
       </div>
@@ -202,84 +205,92 @@ function FormulaireModele({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-900 p-5 text-neutral-100 shadow-xl">
-        <h3 className="text-base font-semibold">{modele ? "Modifier le modèle" : "Nouveau modèle"}</h3>
+      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-neutral-700 bg-neutral-900 p-5 text-neutral-100 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-white">{modele ? "Modifier le modèle" : "Nouveau modèle"}</h3>
+          <button
+            onClick={onFermer}
+            className="rounded-full border border-neutral-600 px-3 py-1 text-xs font-medium text-neutral-200 hover:bg-neutral-800"
+          >
+            ← Retour
+          </button>
+        </div>
         <div className="mt-4 space-y-3">
-          <label className="block text-xs text-neutral-400">
+          <label className="block text-xs font-medium text-neutral-200">
             Nom du modèle
             <input
               value={nom}
               onChange={(e) => setNom(e.target.value)}
               placeholder="ex : Modèle 2026"
-              className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100"
+              className="mt-1 w-full rounded-md border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white placeholder:text-neutral-500"
             />
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-xs text-neutral-400">
+            <label className="block text-xs font-medium text-neutral-200">
               Nom affiché en en-tête
               <input
                 value={enteteNom}
                 onChange={(e) => setEnteteNom(e.target.value)}
                 placeholder="SAS Optique & Audition"
-                className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100"
+                className="mt-1 w-full rounded-md border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white placeholder:text-neutral-500"
               />
             </label>
-            <label className="block text-xs text-neutral-400">
+            <label className="block text-xs font-medium text-neutral-200">
               SIRET
               <input
                 value={enteteSiret}
                 onChange={(e) => setEnteteSiret(e.target.value)}
-                className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100"
+                className="mt-1 w-full rounded-md border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white placeholder:text-neutral-500"
               />
             </label>
           </div>
-          <label className="block text-xs text-neutral-400">
+          <label className="block text-xs font-medium text-neutral-200">
             Adresse
             <input
               value={enteteAdresse}
               onChange={(e) => setEnteteAdresse(e.target.value)}
-              className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100"
+              className="mt-1 w-full rounded-md border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white placeholder:text-neutral-500"
             />
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-xs text-neutral-400">
+            <label className="block text-xs font-medium text-neutral-200">
               Téléphone
               <input
                 value={enteteTelephone}
                 onChange={(e) => setEnteteTelephone(e.target.value)}
-                className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100"
+                className="mt-1 w-full rounded-md border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white placeholder:text-neutral-500"
               />
             </label>
-            <label className="block text-xs text-neutral-400">
+            <label className="block text-xs font-medium text-neutral-200">
               Email
               <input
                 value={enteteEmail}
                 onChange={(e) => setEnteteEmail(e.target.value)}
-                className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100"
+                className="mt-1 w-full rounded-md border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white placeholder:text-neutral-500"
               />
             </label>
           </div>
-          <label className="block text-xs text-neutral-400">
+          <label className="block text-xs font-medium text-neutral-200">
             Texte d&apos;introduction (optionnel, sous le titre)
             <textarea
               value={texteIntro}
               onChange={(e) => setTexteIntro(e.target.value)}
               rows={2}
-              className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100"
+              className="mt-1 w-full rounded-md border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white placeholder:text-neutral-500"
             />
           </label>
-          <label className="block text-xs text-neutral-400">
+          <label className="block text-xs font-medium text-neutral-200">
             Pied de page (mentions légales, CGV...)
             <textarea
               value={piedDePage}
               onChange={(e) => setPiedDePage(e.target.value)}
               rows={3}
-              className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100"
+              className="mt-1 w-full rounded-md border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white placeholder:text-neutral-500"
             />
           </label>
         </div>
 
-        {erreur && <p className="mt-2 text-xs text-red-400">{erreur}</p>}
+        {erreur && <p className="mt-2 text-xs font-medium text-red-300">{erreur}</p>}
         <div className="mt-4 flex items-center gap-2">
           <button
             onClick={enregistrer}
@@ -288,7 +299,7 @@ function FormulaireModele({
           >
             {envoi ? "Enregistrement…" : "Enregistrer"}
           </button>
-          <button onClick={onFermer} className="text-xs text-neutral-400 hover:underline">
+          <button onClick={onFermer} className="text-xs font-medium text-neutral-300 hover:underline">
             Annuler
           </button>
         </div>
