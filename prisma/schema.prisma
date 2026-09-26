@@ -173,10 +173,11 @@ model Personne {
   syntheseBesoinValideeA   DateTime? // horodatage de la validation humaine — null tant que non validée
   syntheseBesoinValideePar String? // qui a validé
 
-  documents    Document[]
-  ordonnances  Ordonnance[]
-  evenements   Evenement[]
-  propositions Proposition[]
+  documents          Document[]
+  ordonnances        Ordonnance[]
+  evenements         Evenement[]
+  propositions       Proposition[]
+  codesSignatureSms  CodeSignatureSms[]
 
   @@index([nom, prenom])
   @@index([foyerId])
@@ -187,6 +188,24 @@ enum RoleAssure {
   NON_RENSEIGNE
   ASSURE
   AYANT_DROIT
+}
+
+/// Code à usage unique envoyé par SMS (Twilio) pour la signature électronique
+/// du consentement RGPD — alternative à la validation à l'écran, à la
+/// signature au stylet, ou au document papier scanné (voir carte RGPD).
+/// codeHash : jamais le code en clair en base, même à très courte durée de
+/// vie — comparaison par hachage, comme un mot de passe.
+model CodeSignatureSms {
+  id         String    @id @default(cuid())
+  creeA      DateTime  @default(now())
+  personneId String
+  personne   Personne  @relation(fields: [personneId], references: [id])
+  codeHash   String
+  expireA    DateTime
+  utiliseA   DateTime?
+  tentatives Int       @default(0)
+
+  @@index([personneId])
 }
 
 /// Prescription (optique) ou compte-rendu d'analyse (audition), avec renouvellement.

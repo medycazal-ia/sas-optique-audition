@@ -28,6 +28,7 @@ import { transposerCylindrePositif, valeursActives, type MesureOeil } from "@/li
 import type { AnalyseBeneficiaire } from "@/lib/beneficiaires";
 import Carrousel from "@/components/Carrousel";
 import CaptureCamera from "@/components/CaptureCamera";
+import PadSignature from "@/components/PadSignature";
 
 type PersonneAvecRelations = Personne & {
   documents: Document[];
@@ -2926,6 +2927,10 @@ function ConsentementsRgpd({ personne, documents }: { personne: PersonneAvecRela
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ informe: true }),
     });
+    fermerEtRafraichir();
+  }
+
+  function fermerEtRafraichir() {
     setPopupOuverte(false);
     router.refresh();
   }
@@ -3040,8 +3045,11 @@ function ConsentementsRgpd({ personne, documents }: { personne: PersonneAvecRela
       {popupOuverte && (
         <PopupRgpd
           personneId={personne.id}
+          telephone={personne.telephone}
           onFermer={() => setPopupOuverte(false)}
           onValider={validerInformation}
+          onCodeSmsValide={fermerEtRafraichir}
+          onSignerFichier={televerserDocumentSigne}
         />
       )}
     </Carte>
@@ -3055,19 +3063,63 @@ function ConsentementsRgpd({ personne, documents }: { personne: PersonneAvecRela
  * audiogramme) relèvent du soin et ne demandent pas de consentement du
  * client (article 9.2.h du RGPD) — mais le client doit en être informé, et
  * son consentement explicite, canal par canal, reste obligatoire pour toute
- * sollicitation commerciale (email/SMS/téléphone). Deux façons de traiter
- * cette étape : valider directement sur cet écran, ou imprimer le
- * formulaire pour une signature papier (à scanner et conserver ensuite).
+ * sollicitation commerciale (email/SMS/téléphone). Quatre façons de traiter
+ * cette étape : valider directement sur cet écran, signer au stylet/à
+ * l'écran tactile, signer par code SMS, ou imprimer le formulaire pour une
+ * signature papier (à scanner et conserver ensuite).
  */
 function PopupRgpd({
   personneId,
+  telephone,
   onFermer,
   onValider,
+  onCodeSmsValide,
+  onSignerFichier,
 }: {
   personneId: string;
+  telephone: string | null;
   onFermer: () => void;
   onValider: () => void;
+  onCodeSmsValide: () => void;
+  onSignerFichier: (fichier: File) => void;
 }) {
+  const [padOuvert, setPadOuvert] = useState(false);
+  const [smsOuvert, setSmsOuvert] = useState(false);
+  const [codeEnvoye, setCodeEnvoye] = useState(false);
+  const [code, setCode] = useState("");
+  const [envoiSms, setEnvoiSms] = useState(false);
+  const [erreurSms, setErreurSms] = useState<string | null>(null);
+
+  async function envoyerCode() {
+    setEnvoiSms(true);
+    setErreurSms(null);
+    const reponse = await fetch(`/api/dossiers/${personneId}/consentements/signature-sms/envoyer`, { method: "POST" });
+    setEnvoiSms(false);
+    if (reponse.ok) {
+      setCodeEnvoye(true);
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreurSms(data.erreur ?? "Échec de l'envoi du code.");
+    }
+  }
+
+  async function verifierCode() {
+    setEnvoiSms(true);
+    setErreurSms(null);
+    const reponse = await fetch(`/api/dossiers/${personneId}/consentements/signature-sms/verifier`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    setEnvoiSms(false);
+    if (reponse.ok) {
+      onCodeSmsValide();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreurSms(data.erreur ?? "Code invalide.");
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
       <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
@@ -3086,6 +3138,18 @@ function PopupRgpd({
           >
             ✅ Le client valide maintenant sur cet écran
           </button>
+          <button
+            onClick={() => setPadOuvert(true)}
+            className="rounded-md border border-neutral-300 px-3 py-2 text-xs font-medium hover:bg-neutral-50"
+          >
+            ✍️ Signer au stylet / à l&apos;écran tactile
+          </button>
+          <button
+            onClick={() => setSmsOuvert((v) => !v)}
+            className="rounded-md border border-neutral-300 px-3 py-2 text-xs font-medium hover:bg-neutral-50"
+          >
+            📱 Signer par code SMS
+          </button>
           <a
             href={`/api/dossiers/${personneId}/consentements/formulaire`}
             target="_blank"
@@ -3096,14 +3160,71 @@ function PopupRgpd({
             🖨️ Imprimer le formulaire à signer sur papier
           </a>
         </div>
+
+        {smsOuvert && (
+          <div className="mt-3 space-y-2 rounded-md border border-sky-200 bg-sky-50 p-3">
+            {!telephone?.trim() ? (
+              <p className="text-xs text-amber-700">
+                ⚠️ Aucun numéro de téléphone renseigné sur ce dossier — complétez-le (carte Client) avant de pouvoir
+                envoyer un code.
+              </p>
+            ) : !codeEnvoye ? (
+              <>
+                <p className="text-xs text-neutral-600">Un code à usage unique sera envoyé au {telephone}.</p>
+                <button
+                  onClick={envoyerCode}
+                  disabled={envoiSms}
+                  className="rounded-md bg-sky-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-800 disabled:opacity-50"
+                >
+                  {envoiSms ? "Envoi…" : "Envoyer le code"}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-neutral-600">Code envoyé au {telephone} — saisissez-le ci-dessous.</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    placeholder="123456"
+                    className="w-28 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  />
+                  <button
+                    onClick={verifierCode}
+                    disabled={envoiSms || !code.trim()}
+                    className="rounded-md bg-sky-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-800 disabled:opacity-50"
+                  >
+                    {envoiSms ? "Vérification…" : "Valider le code"}
+                  </button>
+                </div>
+                <button onClick={envoyerCode} disabled={envoiSms} className="text-xs text-sky-700 hover:underline">
+                  Renvoyer un code
+                </button>
+              </>
+            )}
+            {erreurSms && <p className="text-xs text-red-600">{erreurSms}</p>}
+          </div>
+        )}
+
         <p className="mt-2 text-xs text-neutral-400">
-          Formulaire papier : à faire cocher/signer par le client, puis scanner et téléverser (ci-dessous dans la
-          carte) — à conserver en cas de contrôle ou de litige.
+          Formulaire papier ou signature au stylet : à conserver comme preuve du recueil du consentement en cas de
+          contrôle ou de litige.
         </p>
         <button onClick={onFermer} className="mt-3 text-xs text-neutral-400 hover:underline">
           Plus tard
         </button>
       </div>
+
+      {padOuvert && (
+        <PadSignature
+          titre="Signature du consentement RGPD"
+          onFermer={() => setPadOuvert(false)}
+          onSigner={(fichier) => {
+            setPadOuvert(false);
+            onSignerFichier(fichier);
+          }}
+        />
+      )}
     </div>
   );
 }

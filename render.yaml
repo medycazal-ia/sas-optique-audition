@@ -71,6 +71,19 @@ services:
       # cette valeur de test, donc n'atteint pas réellement les mutuelles.
       - key: RESEND_FROM
         sync: false
+      # Signature électronique du consentement RGPD par code SMS (carte
+      # RGPD) — compte et clés à créer sur twilio.com, jamais stockés dans
+      # ce fichier ni dans git. TWILIO_FROM est le numéro Twilio expéditeur
+      # (au format international, ex. +33756XXXXXX). Sans ces trois
+      # variables, l'envoi du code échoue proprement (message clair) — la
+      # validation à l'écran, la signature au stylet et le formulaire papier
+      # restent disponibles.
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM
+        sync: false
 
 databases:
   - name: sas-optique-audition-db
