@@ -354,12 +354,77 @@ enum TypeDocument {
 /// Admin (voir /super-admin/magasins) : création et renommage, jamais de
 /// suppression tant qu'un stock ou un compte utilisateur y est rattaché
 /// (perte de traçabilité sinon) — voir /api/magasins.
+///
+/// La fiche complète (adresse, FINESS, numéros d'agrément...) est distincte
+/// de la Societe : un magasin peut être un établissement secondaire avec son
+/// propre SIRET/FINESS, ou simplement un point de vente rattaché à la
+/// société pour tout le reste (siret vide = hérite de Societe à l'affichage,
+/// voir lib/entiteLegale.ts). Toutes ces rubriques sont volontairement
+/// optionnelles en base — voir champsObligatoiresManquantsMagasin pour
+/// savoir lesquelles sont exigées par le métier avant utilisation réelle.
 model Magasin {
-  id            String        @id @default(cuid())
-  nom           String
-  ville         String?
-  stocks        Stock[]
-  utilisateurs  Utilisateur[]
+  id         String  @id @default(cuid())
+  nom        String
+  ville      String?
+  adresse    String?
+  codePostal String?
+  telephone  String?
+  email      String?
+  siret      String?
+  finess     String? // établissement de santé — obligatoire pour un point de vente d'optique/audition
+
+  // Un magasin peut pratiquer l'une ou l'autre activité, ou les deux — voir
+  // Produit.activite (TypeOrdonnance) pour le même distinguo côté catalogue.
+  numeroAgrementOptique String? // opticien-lunetier
+  numeroAgrementAudio   String? // audioprothésiste
+
+  responsable String? // nom du responsable/gérant de ce point de vente
+
+  stocks       Stock[]
+  utilisateurs Utilisateur[]
+}
+
+/// Entité juridique acheteuse du logiciel — un seul enregistrement (singleton
+/// applicatif : toujours lu/écrit via l'id fixe "singleton", voir
+/// /api/super-admin/societe). Sert d'identité par défaut sur les documents
+/// générés (devis, facture...) et regroupe les mentions légales obligatoires
+/// pour un opticien/audioprothésiste : SIRET, RCS, TVA intracommunautaire,
+/// assurance RC Pro, représentant légal... Toutes les rubriques restent
+/// modifiables à tout moment depuis le Super Admin ; voir
+/// lib/entiteLegale.ts > champsObligatoiresManquantsSociete pour savoir
+/// lesquelles sont exigées avant un usage réel avec des clients.
+model Societe {
+  id       String   @id @default(cuid())
+  creeA    DateTime @default(now())
+  modifieA DateTime @updatedAt
+
+  raisonSociale               String?
+  formeJuridique              String? // SARL, SAS, EI, SELARL...
+  siret                       String? @unique // 14 chiffres — le SIREN est ses 9 premiers chiffres, jamais stocké en double
+  numeroTvaIntracommunautaire String?
+  rcs                         String? // ex. "RCS Paris 123 456 789" — format libre, variable selon la ville d'immatriculation
+  capitalSocial               String? // texte libre : "non applicable" pour une EI/EIRL, montant sinon
+  codeApe                     String?
+
+  adresse    String?
+  codePostal String?
+  ville      String?
+
+  telephone String?
+  email     String?
+  siteWeb   String?
+
+  representantLegal String? // nom du dirigeant/gérant
+
+  numeroFiness String? // si un numéro unique couvre toute la société — sinon renseigné par magasin
+
+  assuranceRcProNom    String? // assurance responsabilité civile professionnelle — obligatoire pour une profession de santé
+  assuranceRcProNumero String?
+
+  // Coordonnées bancaires pour les remboursements mutuelle/sécurité sociale,
+  // si centralisés au niveau société plutôt que par magasin.
+  iban String?
+  bic  String?
 }
 
 /// Article catalogue : monture, verre, lentille ou accessoire (V1 optique),

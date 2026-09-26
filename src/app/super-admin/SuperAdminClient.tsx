@@ -116,6 +116,12 @@ export default function SuperAdminClient({
           >
             🏬 Magasins
           </Link>
+          <Link
+            href="/super-admin/societe"
+            className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-3 text-sm font-bold text-neutral-950 shadow-[0_0_25px_rgba(217,164,65,0.35)] transition hover:scale-105"
+          >
+            🏢 Société
+          </Link>
         </div>
 
         {creation && (
