@@ -20,15 +20,20 @@ import { traiterMailAccordMutuelle } from "@/lib/traitementMailAccordMutuelle";
 export async function POST(request: NextRequest) {
   const secret = process.env.ACCORD_MUTUELLE_WEBHOOK_SECRET;
   if (!secret) {
+    console.error("accord-mutuelle-entrant — rejeté : ACCORD_MUTUELLE_WEBHOOK_SECRET n'est pas configuré sur le serveur.");
     return NextResponse.json({ erreur: "ACCORD_MUTUELLE_WEBHOOK_SECRET n'est pas configuré sur le serveur." }, { status: 503 });
   }
   const autorisation = request.headers.get("authorization");
   if (autorisation !== `Bearer ${secret}`) {
+    // Le scénario Make appelant est configuré en `stopOnHttpError: false` — un 401
+    // ici n'apparaît donc jamais comme un échec côté Make, seul ce log le révèle.
+    console.error("accord-mutuelle-entrant — rejeté : en-tête Authorization absent ou secret incorrect.");
     return NextResponse.json({ erreur: "Non autorisé." }, { status: 401 });
   }
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body.subject !== "string" || typeof body.bodyText !== "string") {
+    console.error("accord-mutuelle-entrant — payload invalide (subject/bodyText manquants) :", body);
     return NextResponse.json({ erreur: "Payload invalide — subject et bodyText requis." }, { status: 400 });
   }
 
@@ -46,6 +51,7 @@ export async function POST(request: NextRequest) {
     messageId: typeof body.messageId === "string" ? body.messageId : undefined,
     attachments,
   });
+  console.log("accord-mutuelle-entrant — traité :", { subject: body.subject, ...resultat });
 
   return NextResponse.json(resultat);
 }
