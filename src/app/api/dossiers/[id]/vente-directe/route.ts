@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
+import { correctionActivePourPersonne } from "@/lib/correctionVerrePrefill";
+import { correctionVide } from "@/lib/correctionVerre";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -59,6 +61,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   const montantTTC = lignesDemandees.reduce((s, l) => s + produitParId.get(l.produitId)!.prixTTC * l.quantite, 0);
   const maintenant = new Date();
 
+  // Correction optique (catégorie VERRE) : préremplie depuis la dernière
+  // ordonnance OPTIQUE du dossier — une seule fois, même personneId pour
+  // toute la vente (voir modèle PropositionLigne).
+  const contientVerre = lignesDemandees.some((l) => produitParId.get(l.produitId)!.type === "VERRE");
+  const correction = contientVerre ? await correctionActivePourPersonne(personneId) : correctionVide();
+
   const { commande, livraison, facture } = await prisma.$transaction(async (tx) => {
     const commande = await tx.commande.create({
       data: {
@@ -77,6 +85,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               descriptionProduit: produit.description,
               quantite: l.quantite,
               prixUnitaireTTC: produit.prixTTC,
+              ...(produit.type === "VERRE" ? correction : {}),
             };
           }),
         },

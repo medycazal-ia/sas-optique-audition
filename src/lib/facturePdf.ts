@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { ModeleDocument } from "@prisma/client";
 import { dessinerEntete, dessinerPiedDePage } from "@/lib/pdfCommun";
+import { formaterCorrectionVerreParOeil, type CorrectionVerre } from "@/lib/correctionVerre";
 
 /** Génère une facture imprimable (carte Facturation & financement) — voir carte Super Admin pour configurer l'en-tête/pied de page. */
 export async function genererFacturePdf(params: {
@@ -8,7 +9,7 @@ export async function genererFacturePdf(params: {
   nom: string;
   creeA: Date;
   montantTTC: number;
-  lignes: { libelle: string; description?: string | null; quantite: number; prixUnitaireTTC: number | null }[];
+  lignes: { libelle: string; description?: string | null; correction?: CorrectionVerre | null; quantite: number; prixUnitaireTTC: number | null }[];
   modele?: ModeleDocument | null;
 }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -50,6 +51,13 @@ export async function genererFacturePdf(params: {
     if (ligne.description) {
       page.drawText(ligne.description.slice(0, 90), { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
       y -= 14;
+    }
+    if (ligne.correction) {
+      for (const ligneCorrection of formaterCorrectionVerreParOeil(ligne.correction)) {
+        if (!ligneCorrection) continue;
+        page.drawText(ligneCorrection, { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
+        y -= 14;
+      }
     }
     y -= 4;
   }

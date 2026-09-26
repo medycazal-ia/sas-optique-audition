@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
+import { correctionActivePourPersonne } from "@/lib/correctionVerrePrefill";
+import { correctionVide } from "@/lib/correctionVerre";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -63,6 +65,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 
+  // Correction optique (catégorie VERRE) : préremplie depuis la dernière
+  // ordonnance OPTIQUE du dossier — modifiable ensuite indépendamment (voir
+  // modèle PropositionLigne).
+  const correction = produit.type === "VERRE" ? await correctionActivePourPersonne(proposition.personneId) : correctionVide();
+
   const ligne = await prisma.propositionLigne.create({
     data: {
       propositionId,
@@ -77,6 +84,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       descriptionProduit: produit.description,
       marqueProduit: produit.marque,
       fournisseurNom: produit.fournisseur?.nom ?? null,
+      ...correction,
     },
   });
 

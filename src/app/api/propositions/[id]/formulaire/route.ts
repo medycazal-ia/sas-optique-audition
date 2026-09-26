@@ -30,6 +30,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     lignes: proposition.lignes.map((l) => ({
       libelle: l.libelleProduit,
       description: l.descriptionProduit,
+      correction: l,
       quantite: l.quantite,
       prixUnitaireTTC: l.prixUnitaireTTC,
     })),
