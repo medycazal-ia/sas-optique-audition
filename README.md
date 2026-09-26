@@ -242,6 +242,26 @@ document image/PDF **scanné et téléversé** (nouveau type de pièce
 `CONSENTEMENT_RGPD`, carte RGPD) : c'est la preuve du recueil du
 consentement à conserver en cas de contrôle ou de litige.
 
+## Signature électronique des propositions (devis)
+
+Les mêmes 4 façons de signer que pour le consentement RGPD s'appliquent à
+l'acceptation d'une proposition (carte "Propositions" / page `/propositions/:id`) :
+validation à l'écran, signature au stylet/écran tactile (`PadSignature`),
+code SMS (Twilio), ou devis imprimé (`src/lib/devisPdf.ts`) signé sur papier
+puis scanné. `Proposition.signatureMode` trace laquelle a été utilisée.
+
+Un devis signé (stylet ou papier scanné) est enregistré comme document
+`DEVIS_SIGNE`, désormais rattaché à la proposition précise via
+`Document.propositionId` — un même dossier pouvant avoir plusieurs devis au
+fil du temps, ce lien évite toute ambiguïté sur "quel devis correspond à
+quelle signature".
+
+La logique de création de la demande de prise en charge (déclenchée par
+toute acceptation, quel que soit le mode) est factorisée dans
+`src/lib/demandesPriseEnCharge.ts`, pour ne pas la dupliquer entre la
+validation à l'écran (`POST .../decision`) et la signature électronique
+(`POST .../accepter-signature`).
+
 ## Conformité données de santé
 
 **Important, à lire avant toute mise en production** :
