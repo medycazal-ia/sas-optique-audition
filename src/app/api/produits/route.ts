@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
 import { calculerDescriptionProduit } from "@/lib/descriptionProduit";
+import { completerTarif } from "@/lib/tarificationProduit";
 
 const TYPES_VALIDES: TypeProduit[] = [
   "MONTURE",
@@ -86,7 +87,6 @@ export async function POST(request: NextRequest) {
   const reference = typeof body.reference === "string" ? body.reference.trim() : "";
   const marque = typeof body.marque === "string" ? body.marque.trim() : "";
   const modele = typeof body.modele === "string" ? body.modele.trim() : "";
-  const prixTTC = Number(body.prixTTC);
   const activite = ACTIVITES_VALIDES.includes(body.activite) ? (body.activite as TypeOrdonnance) : "OPTIQUE";
 
   if (!TYPES_VALIDES.includes(type)) {
@@ -94,9 +94,6 @@ export async function POST(request: NextRequest) {
   }
   if (!reference || !marque || !modele) {
     return NextResponse.json({ erreur: "Référence, marque et modèle sont requis." }, { status: 400 });
-  }
-  if (!Number.isFinite(prixTTC) || prixTTC < 0) {
-    return NextResponse.json({ erreur: "prixTTC (en centimes, entier positif) requis." }, { status: 400 });
   }
 
   const existant = await prisma.produit.findUnique({ where: { reference } });
@@ -111,13 +108,30 @@ export async function POST(request: NextRequest) {
   const nomenclature = texteOptionnel(body.nomenclature);
   const remarque = texteOptionnel(body.remarque);
   const fournisseurId = texteOptionnel(body.fournisseurId);
-  const prixAchat = nombreOptionnel(body.prixAchat);
-  const coefficient = nombreOptionnel(body.coefficient);
-  const tauxTva = nombreOptionnel(body.tauxTva);
-  const prixVenteHT = nombreOptionnel(body.prixVenteHT);
   const plafondRemise = nombreOptionnel(body.plafondRemise);
   const dateDerniereSortieBrute = texteOptionnel(body.dateDerniereSortie);
   const dateDerniereSortie = dateDerniereSortieBrute ? new Date(dateDerniereSortieBrute) : null;
+
+  // Rubriques manquantes déduites de celles fournies (prix achat HT ×
+  // coefficient → prix vente HT → + TVA → prix TTC, et sens inverse) — voir
+  // lib/tarificationProduit.ts. Ne complète jamais une valeur déjà fournie :
+  // un prix achat + coefficient + taux TVA suffit à créer un produit sans
+  // prixTTC saisi explicitement.
+  const tarif = completerTarif({
+    prixAchat: nombreOptionnel(body.prixAchat),
+    coefficient: nombreOptionnel(body.coefficient),
+    tauxTva: nombreOptionnel(body.tauxTva),
+    prixVenteHT: nombreOptionnel(body.prixVenteHT),
+    prixTTC: nombreOptionnel(body.prixTTC),
+  });
+  const { prixAchat, coefficient, tauxTva, prixVenteHT } = tarif;
+  const prixTTC = tarif.prixTTC;
+  if (prixTTC === null || prixTTC < 0) {
+    return NextResponse.json(
+      { erreur: "prixTTC (en centimes, entier positif) requis, ou prixAchat + coefficient + tauxTva permettant de le calculer." },
+      { status: 400 },
+    );
+  }
 
   const description = calculerDescriptionProduit({ modele, taille, coloris, nomenclature, prixTTC, tauxTva, prixVenteHT });
 

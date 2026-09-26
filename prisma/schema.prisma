@@ -520,11 +520,11 @@ model Produit {
   coloris            String?
   nomenclature       String? // code LPP/nomenclature sécurité sociale, si applicable
   description        String? // recalculée automatiquement — voir commentaire ci-dessus, jamais éditable directement
-  prixAchat          Int? // en centimes
-  coefficient        Float?
+  prixAchat          Int? // en centimes — prix d'achat HT (coût fournisseur, hors taxes)
+  coefficient        Float? // multiplicateur prix d'achat HT → prix de vente HT — voir src/lib/tarificationProduit.ts
   prixTTC            Int // en centimes — "prix public TTC"
   tauxTva            Float? // ex. 0.2 pour 20 %
-  prixVenteHT        Int? // en centimes
+  prixVenteHT        Int? // en centimes — prixAchat × coefficient, avant application de la TVA
   plafondRemise      Float? // ex. 0.1 pour 10 %
   remarque           String?
   dateDerniereSortie DateTime?

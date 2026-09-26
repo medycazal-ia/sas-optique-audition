@@ -3,7 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Fournisseur, Magasin } from "@prisma/client";
-import { parserPrixEnCentimes } from "@/lib/argent";
+import {
+  type ChampTarif,
+  type ValeursTarif,
+  formaterCentimesPourChamp,
+  formaterNombrePourChamp,
+  formaterPourcentagePourChamp,
+  parserCentimesPourChamp,
+  parserNombrePourChamp,
+  parserPourcentagePourChamp,
+  recalculerTarif,
+} from "@/lib/tarificationProduit";
 
 const TYPES = [
   { valeur: "MONTURE", libelle: "Monture" },
@@ -35,23 +45,31 @@ export default function NouveauProduitClient({
   const router = useRouter();
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [tarif, setTarif] = useState<ValeursTarif>({
+    prixAchat: null,
+    coefficient: null,
+    tauxTva: null,
+    prixVenteHT: null,
+    prixTTC: null,
+  });
+
+  function surChampTarif(champ: ChampTarif, parseur: (s: string) => number | null) {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      setTarif((precedent) => recalculerTarif({ ...precedent, [champ]: parseur(e.target.value) }, champ));
+    };
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErreur(null);
+
+    if (tarif.prixTTC === null) {
+      setErreur("Prix public TTC invalide.");
+      return;
+    }
     setEnvoi(true);
 
     const form = new FormData(event.currentTarget);
-    const prixTTC = parserPrixEnCentimes(String(form.get("prix") ?? ""));
-    if (prixTTC === null) {
-      setErreur("Prix public TTC invalide.");
-      setEnvoi(false);
-      return;
-    }
-    const prixAchat = form.get("prixAchat") ? parserPrixEnCentimes(String(form.get("prixAchat"))) : null;
-    const prixVenteHT = form.get("prixVenteHT") ? parserPrixEnCentimes(String(form.get("prixVenteHT"))) : null;
-    const tauxTvaSaisi = String(form.get("tauxTva") ?? "").trim();
-    const tauxTva = tauxTvaSaisi ? Number(tauxTvaSaisi.replace(",", ".")) / 100 : null;
     const plafondRemiseSaisi = String(form.get("plafondRemise") ?? "").trim();
     const plafondRemise = plafondRemiseSaisi ? Number(plafondRemiseSaisi.replace(",", ".")) / 100 : null;
     const quantite = String(form.get("quantite") ?? "").trim();
@@ -68,11 +86,11 @@ export default function NouveauProduitClient({
       taille: form.get("taille") || undefined,
       coloris: form.get("coloris") || undefined,
       nomenclature: form.get("nomenclature") || undefined,
-      prixTTC,
-      prixAchat,
-      coefficient: form.get("coefficient") || undefined,
-      tauxTva,
-      prixVenteHT,
+      prixTTC: tarif.prixTTC,
+      prixAchat: tarif.prixAchat,
+      coefficient: tarif.coefficient ?? undefined,
+      tauxTva: tarif.tauxTva,
+      prixVenteHT: tarif.prixVenteHT,
       plafondRemise,
       remarque: form.get("remarque") || undefined,
       dateDerniereSortie: form.get("dateDerniereSortie") || undefined,
@@ -167,29 +185,59 @@ export default function NouveauProduitClient({
 
       <div className="grid grid-cols-2 gap-3">
         <label className="text-sm">
-          Prix achat (€)
-          <input name="prixAchat" placeholder="ex. 45,00" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+          Prix achat HT (€)
+          <input
+            value={formaterCentimesPourChamp(tarif.prixAchat)}
+            onChange={surChampTarif("prixAchat", parserCentimesPourChamp)}
+            placeholder="ex. 45,00"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
         </label>
         <label className="text-sm">
           Coefficient
-          <input name="coefficient" placeholder="ex. 2,5" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+          <input
+            value={formaterNombrePourChamp(tarif.coefficient)}
+            onChange={surChampTarif("coefficient", parserNombrePourChamp)}
+            placeholder="ex. 2,5"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
         </label>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         <label className="text-sm">
           Prix public TTC (€) *
-          <input name="prix" required placeholder="129,90" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+          <input
+            value={formaterCentimesPourChamp(tarif.prixTTC)}
+            onChange={surChampTarif("prixTTC", parserCentimesPourChamp)}
+            required
+            placeholder="129,90"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
         </label>
         <label className="text-sm">
           Taux TVA (%)
-          <input name="tauxTva" placeholder="ex. 20" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+          <input
+            value={formaterPourcentagePourChamp(tarif.tauxTva)}
+            onChange={surChampTarif("tauxTva", parserPourcentagePourChamp)}
+            placeholder="ex. 20"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
         </label>
         <label className="text-sm">
           Prix vente HT (€)
-          <input name="prixVenteHT" placeholder="ex. 108,25" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+          <input
+            value={formaterCentimesPourChamp(tarif.prixVenteHT)}
+            onChange={surChampTarif("prixVenteHT", parserCentimesPourChamp)}
+            placeholder="ex. 108,25"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
         </label>
       </div>
+      <p className="-mt-2 text-xs text-neutral-400">
+        Ces cinq champs se recalculent automatiquement entre eux (prix achat HT × coefficient → prix vente HT → +
+        TVA → prix TTC, et inversement). Modifiez-en un, les autres suivent — tous restent librement resaisissables.
+      </p>
 
       <label className="block text-sm">
         Plafond remise (%)

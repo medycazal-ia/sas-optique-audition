@@ -2711,6 +2711,15 @@ function PanierVenteDirecte({ dossierId, onFait }: { dossierId: string; onFait: 
   );
 }
 
+const MOYENS_PAIEMENT = ["Espèces", "Carte bancaire", "Chèque", "Virement", "Code paiement"] as const;
+
+type DetailsCodePaiement = {
+  statut: string;
+  montantPriseEnChargeTTC: number | null;
+  recuLeA: string | null;
+  mutuelleNom: string | null;
+};
+
 function FactureDetail({
   facture,
   commandeId,
@@ -2725,10 +2734,55 @@ function FactureDetail({
   const [envoi, setEnvoi] = useState(false);
   const [montantPaiement, setMontantPaiement] = useState("");
   const [moyen, setMoyen] = useState("");
+  const [moyenPersonnalise, setMoyenPersonnalise] = useState("");
   const [montantAvoir, setMontantAvoir] = useState("");
   const [motifAvoir, setMotifAvoir] = useState("");
   const champMontant = useRef<HTMLInputElement>(null);
   const { idActif } = useSurbrillance();
+
+  // Code paiement (voir lib/codePaiement.ts) proposé comme moyen de
+  // paiement à part entière : sa sélection ouvre une vérification en direct
+  // du code (page /paiements/:code rejouée ici), qui peut ensuite encaisser
+  // directement le montant pris en charge sur cette facture.
+  const [codeSaisi, setCodeSaisi] = useState("");
+  const [verifEnCours, setVerifEnCours] = useState(false);
+  const [verifErreur, setVerifErreur] = useState<string | null>(null);
+  const [detailsCode, setDetailsCode] = useState<DetailsCodePaiement | null>(null);
+
+  async function verifierCode() {
+    const code = codeSaisi.trim();
+    if (!code) return;
+    setVerifEnCours(true);
+    setVerifErreur(null);
+    setDetailsCode(null);
+    const reponse = await fetch(`/api/paiements/${encodeURIComponent(code)}`);
+    const data = await reponse.json().catch(() => ({}));
+    setVerifEnCours(false);
+    if (!reponse.ok) {
+      setVerifErreur(data.erreur ?? "Code introuvable.");
+      return;
+    }
+    setDetailsCode(data);
+  }
+
+  async function encaisserDepuisCode() {
+    if (!detailsCode || !detailsCode.montantPriseEnChargeTTC) return;
+    setEnvoi(true);
+    await fetch(`/api/paiements/${encodeURIComponent(codeSaisi.trim())}`, { method: "POST" });
+    await fetch(`/api/factures/${facture.id}/paiements`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        montantTTC: detailsCode.montantPriseEnChargeTTC,
+        moyen: `Code paiement${detailsCode.mutuelleNom ? ` (${detailsCode.mutuelleNom})` : ""}`,
+      }),
+    });
+    setEnvoi(false);
+    setCodeSaisi("");
+    setDetailsCode(null);
+    setMoyen("");
+    onFait();
+  }
 
   const solde = soldeRestantClient(facture);
   const enRetard = factureEnRetardClient(facture, solde);
@@ -2745,15 +2799,17 @@ function FactureDetail({
   async function ajouterPaiement() {
     const centimes = parserPrixEnCentimes(montantPaiement);
     if (centimes === null || centimes <= 0) return;
+    const moyenFinal = moyen === "AUTRE" ? moyenPersonnalise.trim() || undefined : moyen || undefined;
     setEnvoi(true);
     await fetch(`/api/factures/${facture.id}/paiements`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ montantTTC: centimes, moyen: moyen || undefined }),
+      body: JSON.stringify({ montantTTC: centimes, moyen: moyenFinal }),
     });
     setEnvoi(false);
     setMontantPaiement("");
     setMoyen("");
+    setMoyenPersonnalise("");
     onFait();
   }
 
@@ -2854,20 +2910,97 @@ function FactureDetail({
               placeholder="Montant encaissé (€)"
               className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs"
             />
-            <input
+            <select
               value={moyen}
-              onChange={(e) => setMoyen(e.target.value)}
-              placeholder="Moyen (CB, chèque…)"
-              className="w-32 rounded-md border border-neutral-300 px-2 py-1 text-xs"
-            />
+              onChange={(e) => {
+                setMoyen(e.target.value);
+                setCodeSaisi("");
+                setDetailsCode(null);
+                setVerifErreur(null);
+              }}
+              className="w-36 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+            >
+              <option value="">— Moyen —</option>
+              {MOYENS_PAIEMENT.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+              <option value="AUTRE">Autre…</option>
+            </select>
+            {moyen === "AUTRE" && (
+              <input
+                value={moyenPersonnalise}
+                onChange={(e) => setMoyenPersonnalise(e.target.value)}
+                placeholder="Préciser"
+                className="w-28 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+              />
+            )}
             <button
               onClick={ajouterPaiement}
-              disabled={envoi || !montantPaiement.trim()}
+              disabled={envoi || !montantPaiement.trim() || moyen === "Code paiement"}
               className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
             >
               Encaisser
             </button>
           </div>
+
+          {moyen === "Code paiement" && (
+            <div className="rounded-md border border-dashed border-emerald-300 bg-emerald-50/50 p-2">
+              <p className="text-xs font-medium text-emerald-800">
+                💳 Code paiement — saisissez ou scannez le code imprimé sur la demande de prise en charge.
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  value={codeSaisi}
+                  onChange={(e) => {
+                    setCodeSaisi(e.target.value);
+                    setDetailsCode(null);
+                    setVerifErreur(null);
+                  }}
+                  placeholder="Code paiement"
+                  className="w-40 rounded-md border border-neutral-300 px-2 py-1 text-xs"
+                />
+                <button
+                  onClick={verifierCode}
+                  disabled={verifEnCours || !codeSaisi.trim()}
+                  className="rounded-md border border-emerald-300 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  {verifEnCours ? "…" : "Vérifier"}
+                </button>
+                <a
+                  href={codeSaisi.trim() ? `/paiements/${encodeURIComponent(codeSaisi.trim())}` : "/paiements"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-emerald-700 hover:underline"
+                >
+                  🔳 Ouvrir la page paiement
+                </a>
+              </div>
+              {verifErreur && <p className="mt-1 text-xs text-red-600">{verifErreur}</p>}
+              {detailsCode && (
+                <div className="mt-2 rounded-md bg-white p-2 text-xs text-neutral-700">
+                  <p>
+                    Montant à rapprocher : <span className="font-semibold">{formaterPrix(detailsCode.montantPriseEnChargeTTC ?? 0)}</span>
+                    {detailsCode.mutuelleNom ? ` · ${detailsCode.mutuelleNom}` : ""}
+                  </p>
+                  {detailsCode.recuLeA && (
+                    <p className="mt-1 text-emerald-700">
+                      ✅ Déjà marqué reçu le {new Date(detailsCode.recuLeA).toLocaleDateString("fr-FR")}.
+                    </p>
+                  )}
+                  <button
+                    onClick={encaisserDepuisCode}
+                    disabled={envoi || !detailsCode.montantPriseEnChargeTTC}
+                    className="mt-2 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {envoi ? "…" : `Marquer reçu et encaisser ${formaterPrix(detailsCode.montantPriseEnChargeTTC ?? 0)}`}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <input
               value={montantAvoir}

@@ -5,6 +5,32 @@ import { useRouter } from "next/navigation";
 import type { Fournisseur, HistoriquePrix, Magasin, Produit, Stock } from "@prisma/client";
 import Carrousel from "@/components/Carrousel";
 import { formaterPrix, parserPrixEnCentimes } from "@/lib/argent";
+import {
+  type ChampTarif,
+  type ValeursTarif,
+  formaterCentimesPourChamp,
+  formaterNombrePourChamp,
+  formaterPourcentagePourChamp,
+  parserCentimesPourChamp,
+  parserNombrePourChamp,
+  parserPourcentagePourChamp,
+  recalculerTarif,
+} from "@/lib/tarificationProduit";
+
+const PARSEURS_TARIF: Record<ChampTarif, (s: string) => number | null> = {
+  prixAchat: parserCentimesPourChamp,
+  coefficient: parserNombrePourChamp,
+  tauxTva: parserPourcentagePourChamp,
+  prixVenteHT: parserCentimesPourChamp,
+  prixTTC: parserCentimesPourChamp,
+};
+const FORMATEURS_TARIF: Record<ChampTarif, (n: number | null) => string> = {
+  prixAchat: formaterCentimesPourChamp,
+  coefficient: formaterNombrePourChamp,
+  tauxTva: formaterPourcentagePourChamp,
+  prixVenteHT: formaterCentimesPourChamp,
+  prixTTC: formaterCentimesPourChamp,
+};
 
 type StockAvecMagasin = Stock & { magasin: Magasin };
 type ProduitAvecRelations = Produit & {
@@ -128,6 +154,34 @@ function FicheProduit({ produit, fournisseurs }: { produit: Produit; fournisseur
   const [envoi, setEnvoi] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  /**
+   * Recalcule automatiquement les rubriques tarifaires liées (voir
+   * lib/tarificationProduit.ts) : le champ édité garde la saisie brute de
+   * l'utilisateur (pour ne pas gêner la frappe), les autres sont reformatés
+   * à partir du résultat du calcul.
+   */
+  function onChangeTarif(champTarif: ChampTarif) {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      const saisie = e.target.value;
+      const valeurs: ValeursTarif = {
+        prixAchat: PARSEURS_TARIF.prixAchat(champTarif === "prixAchat" ? saisie : champs.prixAchat),
+        coefficient: PARSEURS_TARIF.coefficient(champTarif === "coefficient" ? saisie : champs.coefficient),
+        tauxTva: PARSEURS_TARIF.tauxTva(champTarif === "tauxTva" ? saisie : champs.tauxTva),
+        prixVenteHT: PARSEURS_TARIF.prixVenteHT(champTarif === "prixVenteHT" ? saisie : champs.prixVenteHT),
+        prixTTC: PARSEURS_TARIF.prixTTC(champTarif === "prixTTC" ? saisie : champs.prix),
+      };
+      const recalcule = recalculerTarif(valeurs, champTarif);
+      setChamps((precedent) => ({
+        ...precedent,
+        prixAchat: champTarif === "prixAchat" ? saisie : FORMATEURS_TARIF.prixAchat(recalcule.prixAchat),
+        coefficient: champTarif === "coefficient" ? saisie : FORMATEURS_TARIF.coefficient(recalcule.coefficient),
+        tauxTva: champTarif === "tauxTva" ? saisie : FORMATEURS_TARIF.tauxTva(recalcule.tauxTva),
+        prixVenteHT: champTarif === "prixVenteHT" ? saisie : FORMATEURS_TARIF.prixVenteHT(recalcule.prixVenteHT),
+        prix: champTarif === "prixTTC" ? saisie : FORMATEURS_TARIF.prixTTC(recalcule.prixTTC),
+      }));
+    };
+  }
+
   async function enregistrer() {
     const prixTTC = parserPrixEnCentimes(champs.prix);
     if (prixTTC === null) {
@@ -229,49 +283,33 @@ function FicheProduit({ produit, fournisseurs }: { produit: Produit; fournisseur
 
         <div className="grid grid-cols-2 gap-3">
           <label className="text-sm">
-            Prix achat (€)
-            <input
-              value={champs.prixAchat}
-              onChange={(e) => setChamps({ ...champs, prixAchat: e.target.value })}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-            />
+            Prix achat HT (€)
+            <input value={champs.prixAchat} onChange={onChangeTarif("prixAchat")} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
           </label>
           <label className="text-sm">
             Coefficient
-            <input
-              value={champs.coefficient}
-              onChange={(e) => setChamps({ ...champs, coefficient: e.target.value })}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-            />
+            <input value={champs.coefficient} onChange={onChangeTarif("coefficient")} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
           </label>
         </div>
 
         <div className="grid grid-cols-3 gap-3">
           <label className="text-sm">
             Prix public TTC (€)
-            <input
-              value={champs.prix}
-              onChange={(e) => setChamps({ ...champs, prix: e.target.value })}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-            />
+            <input value={champs.prix} onChange={onChangeTarif("prixTTC")} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
           </label>
           <label className="text-sm">
             Taux TVA (%)
-            <input
-              value={champs.tauxTva}
-              onChange={(e) => setChamps({ ...champs, tauxTva: e.target.value })}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-            />
+            <input value={champs.tauxTva} onChange={onChangeTarif("tauxTva")} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
           </label>
           <label className="text-sm">
             Prix vente HT (€)
-            <input
-              value={champs.prixVenteHT}
-              onChange={(e) => setChamps({ ...champs, prixVenteHT: e.target.value })}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-            />
+            <input value={champs.prixVenteHT} onChange={onChangeTarif("prixVenteHT")} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" />
           </label>
         </div>
+        <p className="-mt-1 text-xs text-neutral-400">
+          Ces cinq champs se recalculent automatiquement entre eux (prix achat HT × coefficient → prix vente HT → +
+          TVA → prix TTC, et inversement).
+        </p>
 
         <label className="block text-sm">
           Plafond remise (%)
