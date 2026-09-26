@@ -11,27 +11,27 @@ import { extraireAccordMutuelle, extraireAccordMutuelleDepuisTexte, type Resulta
  * mail avec pièce jointe à /api/automatisations/accord-mutuelle-entrant.
  *
  * Filtre de pertinence (avant toute extraction, pour limiter le bruit et le
- * coût OCR) : nom ET prénom ensemble d'un patient ayant une demande en
- * attente, cherchés dans le sujet, le corps ou le nom de la pièce jointe —
- * et rien d'autre (ni mots-clés génériques type "accord"/"prise en charge",
- * ni nom de famille seul). Un nom de famille seul peut apparaître par pure
- * coïncidence dans un mail sans rapport (signature de l'expéditeur, société,
- * tiers cité) — constaté en production avec un patient dont le nom de
- * famille coïncidait avec celui de l'opticien lui-même, ce qui faisait
- * attacher des documents sans rapport au mauvais dossier. Exiger nom+prénom
- * ensemble élimine ce risque : c'est une coïncidence bien plus improbable.
+ * coût OCR) : nom ET prénom ensemble d'un patient DU SITE (peu importe qu'il
+ * ait une demande en attente, déjà acceptée ou déjà refusée), cherchés dans
+ * le sujet, le corps ou le nom de la pièce jointe — et rien d'autre (ni
+ * mots-clés génériques type "accord"/"prise en charge", ni nom de famille
+ * seul). Un nom de famille seul peut apparaître par pure coïncidence dans un
+ * mail sans rapport (signature de l'expéditeur, société, tiers cité) —
+ * constaté en production avec un patient dont le nom de famille coïncidait
+ * avec celui de l'opticien lui-même, ce qui faisait attacher des documents
+ * sans rapport au mauvais dossier. Exiger nom+prénom ensemble élimine ce
+ * risque : c'est une coïncidence bien plus improbable.
  *
- * Principe de prudence ("il ne doit y avoir aucune erreur") : n'applique
- * automatiquement un changement de statut ACCORD/REFUS que lorsque le
- * dossier concerné est identifié sans ambiguïté (numéro de sécurité sociale
- * en priorité, sinon nom+prénom exacts trouvés ci-dessus — une seule
- * personne ET une seule demande en attente pour cette personne) ET que les
- * informations nécessaires à cette transition précise sont toutes présentes
- * (montant + numéro d'accord pour un ACCORD). Dans tous les autres cas : le
- * document est tout de même enregistré sur le dossier si un dossier a pu
- * être identifié (pour qu'un humain finisse la saisie en un clic, voir
- * CaptureNumeroAccord), et l'événement est journalisé pour traçabilité —
- * jamais de modification silencieuse ni de devinette.
+ * Principe de prudence ("il ne doit y avoir aucune erreur") : le dossier est
+ * identifié sans ambiguïté dès que le nom+prénom collés ci-dessus désignent
+ * une seule personne, mais un changement de statut ACCORD/REFUS n'est
+ * appliqué automatiquement que si cette personne a par ailleurs une (et une
+ * seule) demande en attente ET que les informations nécessaires à cette
+ * transition précise sont toutes présentes (montant + numéro d'accord pour
+ * un ACCORD). Dans tous les autres cas : le document est tout de même
+ * enregistré sur le dossier identifié (pour qu'un humain finisse la saisie
+ * en un clic, voir CaptureNumeroAccord), et l'événement est journalisé pour
+ * traçabilité — jamais de modification silencieuse ni de devinette.
  */
 
 export type PayloadMailEntrant = {
@@ -67,7 +67,7 @@ function versBuffer(valeur: unknown): Buffer | null {
 }
 
 export type ResultatTraitementMail = {
-  traite: boolean; // false si aucun patient en attente (nom+prénom) n'a été reconnu
+  traite: boolean; // false si aucun patient du site (nom+prénom) n'a été reconnu
   apparie: boolean; // true si un dossier a été identifié sans ambiguïté
   personneId: string | null;
   demandeId: string | null;
@@ -98,12 +98,15 @@ function echapperRegex(texte: string): string {
 }
 
 /**
- * Cherche, parmi les patients ayant une demande en attente, celui dont le nom
- * ET le prénom apparaissent COLLÉS L'UN À L'AUTRE (dans un ordre ou l'autre,
- * séparés seulement par des espaces — "malika cazal" ou "cazal malika") dans
- * un texte déjà normalisé (sujet, corps du mail, ou nom de la pièce jointe —
- * voir les trois appels dans traiterMailAccordMutuelle, chacun dans l'ordre
- * de priorité demandé : sujet, puis corps, puis nom du fichier).
+ * Cherche, parmi TOUS les patients du site (peu importe qu'ils aient une
+ * demande en attente, déjà acceptée ou déjà refusée — un mail peut concerner
+ * un dossier déjà tranché : correction, nouvelle pièce, appel d'un refus...),
+ * celui dont le nom ET le prénom apparaissent COLLÉS L'UN À L'AUTRE (dans un
+ * ordre ou l'autre, séparés seulement par des espaces — "malika cazal" ou
+ * "cazal malika") dans un texte déjà normalisé (sujet, corps du mail, ou nom
+ * de la pièce jointe — voir les trois appels dans traiterMailAccordMutuelle,
+ * chacun dans l'ordre de priorité demandé : sujet, puis corps, puis nom du
+ * fichier).
  *
  * Ni le nom seul, ni le nom et le prénom présents séparément quelque part
  * dans le texte, ne suffisent : les deux constatés en production comme
@@ -115,7 +118,7 @@ function echapperRegex(texte: string): string {
  * N'en retourne un que si un seul patient correspond (ambiguïté entre
  * plusieurs personnes -> null, jamais de choix arbitraire).
  */
-function patientDepuisTexte(texteNormalise: string, personnes: PersonneEnAttente[]): { nom: string; prenom: string } | null {
+function patientDepuisTexte(texteNormalise: string, personnes: PersonneEnAttente[]): { id: string; nom: string; prenom: string } | null {
   if (!texteNormalise) return null;
   const correspondances = new Map<string, PersonneEnAttente>();
   for (const p of personnes) {
@@ -132,7 +135,7 @@ function patientDepuisTexte(texteNormalise: string, personnes: PersonneEnAttente
   if (correspondances.size !== 1) return null;
 
   const personne = [...correspondances.values()][0];
-  return { nom: personne.nom, prenom: personne.prenom! };
+  return { id: personne.id, nom: personne.nom, prenom: personne.prenom! };
 }
 
 export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Promise<ResultatTraitementMail> {
@@ -141,15 +144,12 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
   // dernier recours le contenu du document lui-même (OCR/vision, le plus
   // coûteux et le moins fiable des quatre — un vrai courrier de mutuelle nomme
   // presque toujours le patient dans le sujet, le corps ou le nom du fichier).
-  // DemandePriseEnCharge.personneId n'est pas une relation Prisma déclarée
-  // (voir schema.prisma) : on rejoint donc les deux requêtes à la main.
-  const demandesEnAttente = await prisma.demandePriseEnCharge.findMany({
-    where: { statut: { in: [...STATUTS_EN_ATTENTE] } },
-  });
-  const personnesConcernees = await prisma.personne.findMany({
-    where: { id: { in: [...new Set(demandesEnAttente.map((d) => d.personneId))] } },
-  });
-  const personneParId = new Map(personnesConcernees.map((p) => [p.id, p]));
+  // Recherche parmi TOUS les dossiers du site, pas seulement ceux ayant une
+  // demande en attente : un mail peut concerner un dossier déjà tranché
+  // (accord ou refus déjà enregistré) — pièce complémentaire, correction,
+  // appel d'un refus... — et doit quand même être rattaché au bon dossier.
+  const toutesLesPersonnes = await prisma.personne.findMany();
+  const personneParId = new Map(toutesLesPersonnes.map((p) => [p.id, p]));
 
   const sujetNormalise = normaliser(payload.subject);
   const corpsNormalise = normaliser(payload.bodyText);
@@ -159,19 +159,21 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
     .map(normaliserNomFichier)
     .join(" ");
 
-  const patientSujet = patientDepuisTexte(sujetNormalise, personnesConcernees);
-  const patientCorps = patientDepuisTexte(corpsNormalise, personnesConcernees);
-  const patientFichier = patientDepuisTexte(nomsFichiersNormalises, personnesConcernees);
+  const patientSujet = patientDepuisTexte(sujetNormalise, toutesLesPersonnes);
+  const patientCorps = patientDepuisTexte(corpsNormalise, toutesLesPersonnes);
+  const patientFichier = patientDepuisTexte(nomsFichiersNormalises, toutesLesPersonnes);
   const patientDeterministe = patientSujet ?? patientCorps ?? patientFichier;
 
-  // Seul critère de pertinence : nom ET prénom d'un patient en attente
-  // trouvés ensemble (sujet, corps, ou nom du fichier) — rien d'autre. Pas
-  // de mots-clés génériques ("accord", "prise en charge"...), qui déclenchent
+  // Seul critère de pertinence : nom ET prénom d'un patient du site trouvés
+  // ensemble (sujet, corps, ou nom du fichier) — rien d'autre. Pas de
+  // mots-clés génériques ("accord", "prise en charge"...), qui déclenchent
   // trop de faux positifs sur du courrier sans rapport ; pas de nom seul, qui
   // peut coïncider avec autre chose (voir patientDepuisTexte).
   if (!patientDeterministe) {
-    return { traite: false, apparie: false, personneId: null, demandeId: null, action: null, raison: "Nom et prénom d'aucun patient en attente reconnus dans le sujet, le corps ou le nom du fichier — mail ignoré." };
+    return { traite: false, apparie: false, personneId: null, demandeId: null, action: null, raison: "Nom et prénom d'aucun patient du site reconnus dans le sujet, le corps ou le nom du fichier — mail ignoré." };
   }
+  const personneId = patientDeterministe.id;
+  const personneApparie = personneParId.get(personneId)!;
 
   // Extraction depuis le document — toujours nécessaire pour statut/motif de
   // refus/montant/numéro d'accord (uniquement disponibles là), même quand le
@@ -214,33 +216,15 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
   // cru lire dans le document ou le corps du mail.
   extraction = { ...extraction, patientNom: patientDeterministe.nom, patientPrenom: patientDeterministe.prenom };
 
-  // Rapprochement — demandesEnAttente/personnesConcernees/personneParId déjà
-  // récupérées plus haut (elles servent aussi au filtre de pertinence). NSS
-  // (extrait du document) en priorité si présent, sinon nom+prénom — jamais
-  // le nom seul (voir patientDepuisTexte pour pourquoi).
-  let candidates = demandesEnAttente;
-  if (extraction.patientNumeroSecuriteSociale) {
-    const nss = extraction.patientNumeroSecuriteSociale.replace(/\s+/g, "");
-    candidates = candidates.filter((d) => personneParId.get(d.personneId)?.numeroSecuriteSociale?.replace(/\s+/g, "") === nss);
-  } else {
-    const nomCible = normaliser(patientDeterministe.nom);
-    const prenomCible = normaliser(patientDeterministe.prenom);
-    candidates = candidates.filter((d) => {
-      const p = personneParId.get(d.personneId);
-      return p && normaliser(p.nom) === nomCible && p.prenom && normaliser(p.prenom) === prenomCible;
-    });
-  }
-
-  const personneIds = [...new Set(candidates.map((d) => d.personneId))];
-  if (personneIds.length === 0) {
-    return { traite: true, apparie: false, personneId: null, demandeId: null, action: null, raison: "Aucun dossier en attente ne correspond au patient identifié." };
-  }
-  if (personneIds.length > 1) {
-    return { traite: true, apparie: false, personneId: null, demandeId: null, action: null, raison: "Plusieurs dossiers correspondent (NSS ou nom/prénom ambigus) — traitement manuel requis." };
-  }
-  const personneId = personneIds[0];
-  const personneApparie = personneParId.get(personneId)!;
-  let demandesPersonne = candidates.filter((d) => d.personneId === personneId);
+  // Rapprochement — le dossier est déjà identifié sans ambiguïté (nom+prénom
+  // collés, voir patientDepuisTexte) : reste à savoir s'il a une demande en
+  // attente à mettre à jour automatiquement. S'il n'en a aucune (déjà
+  // acceptée, déjà refusée, ou aucune demande du tout), le document est quand
+  // même enregistré sur son dossier ci-dessous — seule la mise à jour
+  // automatique du statut ACCORD/REFUS nécessite une demande en attente.
+  let demandesPersonne = await prisma.demandePriseEnCharge.findMany({
+    where: { personneId, statut: { in: [...STATUTS_EN_ATTENTE] } },
+  });
 
   // Plusieurs demandes en attente pour cette personne (principale + secondaire) :
   // on tente de départager via le nom de mutuelle extrait, sinon on n'applique rien.
@@ -264,6 +248,25 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
     } catch (e) {
       console.error("traiterMailAccordMutuelle — échec enregistrement document :", e);
     }
+  }
+
+  if (demandesPersonne.length === 0) {
+    await journaliser({
+      type: "demande-mutuelle.mail_apparie_sans_demande_en_attente",
+      entite: "Personne",
+      entiteId: personneId,
+      personneId,
+      acteur: "automatisation-mail",
+      donnees: { subject: payload.subject, from: payload.from, extraction, documentEnregistre },
+    });
+    return {
+      traite: true,
+      apparie: true,
+      personneId,
+      demandeId: null,
+      action: documentEnregistre ? "DOCUMENT_SEUL" : null,
+      raison: "Dossier identifié mais aucune demande en attente pour cette personne (déjà acceptée/refusée, ou aucune demande) — document enregistré sur son dossier, statut non modifié.",
+    };
   }
 
   if (demandesPersonne.length !== 1) {
