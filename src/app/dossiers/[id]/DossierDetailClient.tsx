@@ -1085,6 +1085,130 @@ const COULEUR_STATUT_DEMANDE: Record<string, string> = {
   REFUS: "bg-red-100 text-red-700",
 };
 
+/**
+ * Capture du numéro d'accord mutuelle : cherche d'abord si le courrier de
+ * réponse a déjà été enregistré sur ce dossier (scan, photo ou
+ * téléversement antérieur — type REPONSE_MUTUELLE) pour l'extraire
+ * directement ; sinon, propose de le scanner, le photographier ou le
+ * téléverser (ex. pièce jointe email enregistrée localement — ce logiciel
+ * ne se connecte à aucune boîte mail, il n'y a donc pas de récupération
+ * automatique depuis les emails), et l'enregistre sur le dossier en même
+ * temps que l'extraction du numéro.
+ */
+function CaptureNumeroAccord({
+  demandeId,
+  personneId,
+  documents,
+  onValeur,
+}: {
+  demandeId: string;
+  personneId: string;
+  documents: Document[];
+  onValeur: (v: string) => void;
+}) {
+  const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [capture, setCapture] = useState(false);
+  const inputFichier = useRef<HTMLInputElement>(null);
+
+  const documentExistant = documents
+    .filter((d) => d.type === "REPONSE_MUTUELLE" && !d.cheminStockage.startsWith("verifie-sans-scan/"))
+    .sort((a, b) => new Date(b.creeA).getTime() - new Date(a.creeA).getTime())[0];
+
+  async function extraireDepuisDocument(documentId: string) {
+    setEnCours(true);
+    setErreur(null);
+    const reponse = await fetch(`/api/demandes-mutuelle/${demandeId}/code-paiement/extraire`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentId }),
+    });
+    const data = await reponse.json().catch(() => ({}));
+    setEnCours(false);
+    if (!reponse.ok) {
+      setErreur(data.erreur ?? "Échec de l'extraction.");
+      return;
+    }
+    if (data.numeroAccord) {
+      onValeur(data.numeroAccord);
+    } else {
+      setErreur("Aucun numéro d'accord identifié sur ce document — à saisir à la main si connu.");
+    }
+  }
+
+  async function enregistrerEtExtraire(fichier: File) {
+    setEnCours(true);
+    setErreur(null);
+    const formulaire = new FormData();
+    formulaire.append("type", "REPONSE_MUTUELLE");
+    formulaire.append("fichier", fichier);
+    const reponseDoc = await fetch(`/api/dossiers/${personneId}/documents`, { method: "POST", body: formulaire });
+    if (!reponseDoc.ok) {
+      setEnCours(false);
+      setErreur("Échec de l'enregistrement du document.");
+      return;
+    }
+    const document = await reponseDoc.json();
+    await extraireDepuisDocument(document.id);
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {documentExistant ? (
+        <button
+          type="button"
+          onClick={() => extraireDepuisDocument(documentExistant.id)}
+          disabled={enCours}
+          className="rounded-md border border-sky-300 px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+        >
+          {enCours ? "…" : "📄 Extraire depuis le document déjà enregistré"}
+        </button>
+      ) : (
+        <>
+          <input
+            ref={inputFichier}
+            type="file"
+            accept="image/*,.pdf"
+            className="hidden"
+            onChange={(e) => {
+              const fichier = e.target.files?.[0];
+              if (fichier) enregistrerEtExtraire(fichier);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => inputFichier.current?.click()}
+            disabled={enCours}
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+          >
+            {enCours ? "…" : "Scanner / téléverser"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCapture(true)}
+            disabled={enCours}
+            className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+          >
+            📷 Photo
+          </button>
+        </>
+      )}
+      {erreur && <p className="w-full text-xs text-red-600">{erreur}</p>}
+      {capture && (
+        <CaptureCamera
+          titre="Photographier le courrier de la mutuelle"
+          onFermer={() => setCapture(false)}
+          onCapture={(fichier) => {
+            setCapture(false);
+            enregistrerEtExtraire(fichier);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function MutuelleEtTiersPayant({
   personne,
   propositions,
@@ -1130,6 +1254,7 @@ function MutuelleEtTiersPayant({
                 demande={demande}
                 proposition={proposition}
                 personne={personne}
+                documents={personne.documents}
                 mutuelleBloquante={!mutuelleRenseignee && !mutuelleRefusee}
                 onFait={() => router.refresh()}
               />
@@ -1583,12 +1708,14 @@ function DemandeLigne({
   demande,
   proposition,
   personne,
+  documents,
   mutuelleBloquante,
   onFait,
 }: {
   demande: DemandePriseEnCharge;
   proposition: PropositionAvecLignes;
   personne: PersonneAvecRelations;
+  documents: Document[];
   mutuelleBloquante: boolean;
   onFait: () => void;
 }) {
@@ -1602,6 +1729,12 @@ function DemandeLigne({
   const [erreurEmail, setErreurEmail] = useState<string | null>(null);
   const [envoiEmailEnCours, setEnvoiEmailEnCours] = useState(false);
   const [erreurEnvoi, setErreurEnvoi] = useState<string | null>(null);
+
+  // Numéro d'accord réel de la mutuelle (voir lib/codePaiement.ts) — au
+  // choix extrait par OCR de son courrier de réponse, ou saisi à la main ;
+  // dans les deux cas, il devient le code paiement dès l'accord (à défaut
+  // d'être renseigné, un jeton fictif est utilisé, remplaçable plus tard).
+  const [numeroAccord, setNumeroAccord] = useState("");
 
   const total = proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
 
@@ -1664,10 +1797,20 @@ function DemandeLigne({
     const reponse = await fetch(`/api/demandes-mutuelle/${demande.id}/reponse`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: "ACCORD", montantPriseEnChargeTTC: centimes }),
+      body: JSON.stringify({
+        decision: "ACCORD",
+        montantPriseEnChargeTTC: centimes,
+        numeroAccord: numeroAccord.trim() || undefined,
+      }),
     });
     setEnvoi(false);
     if (reponse.ok) {
+      const data = await reponse.json().catch(() => ({}));
+      if (data.numeroAccordEnConflit) {
+        setErreur(
+          "Numéro d'accord déjà utilisé par une autre demande — un code temporaire a été généré à la place, vous pourrez le corriger ensuite.",
+        );
+      }
       onFait();
     } else {
       const data = await reponse.json().catch(() => ({}));
@@ -1808,6 +1951,21 @@ function DemandeLigne({
               </div>
               <div className="flex items-center gap-2">
                 <input
+                  value={numeroAccord}
+                  onChange={(e) => setNumeroAccord(e.target.value)}
+                  placeholder="Numéro d'accord mutuelle (optionnel)"
+                  disabled={mutuelleBloquante}
+                  className="w-52 rounded-md border border-neutral-300 px-2 py-1 text-xs disabled:opacity-50"
+                />
+              </div>
+              <CaptureNumeroAccord
+                demandeId={demande.id}
+                personneId={personne.id}
+                documents={documents}
+                onValeur={setNumeroAccord}
+              />
+              <div className="flex items-center gap-2">
+                <input
                   value={motifRefus}
                   onChange={(e) => setMotifRefus(e.target.value)}
                   placeholder="Motif de refus (optionnel)"
@@ -1836,7 +1994,15 @@ function DemandeLigne({
               🖨️ Imprimer
             </a>
           </p>
-          {demande.codePaiement && <CodePaiementInfos demandeId={demande.id} demande={demande} onFait={onFait} />}
+          {demande.codePaiement && (
+            <CodePaiementInfos
+              demandeId={demande.id}
+              personneId={personne.id}
+              documents={documents}
+              demande={demande}
+              onFait={onFait}
+            />
+          )}
         </div>
       )}
       {demande.statut === "REFUS" && (
@@ -1856,22 +2022,55 @@ function DemandeLigne({
  * l'accord — voir lib/codePaiement.ts. Simple rapprochement (pseudo tiers
  * payant) : jamais un mouvement d'argent réel déclenché par le logiciel.
  */
+/** Un jeton fictif (voir lib/codePaiement.ts) est 32 caractères hexadécimaux — un vrai numéro d'accord mutuelle ne l'est jamais. */
+function estCodePaiementFictif(code: string): boolean {
+  return /^[0-9a-f]{32}$/.test(code);
+}
+
 function CodePaiementInfos({
   demandeId,
+  personneId,
+  documents,
   demande,
   onFait,
 }: {
   demandeId: string;
+  personneId: string;
+  documents: Document[];
   demande: DemandePriseEnCharge;
   onFait: () => void;
 }) {
   const [envoi, setEnvoi] = useState(false);
+  const [edition, setEdition] = useState(false);
+  const [numeroAccord, setNumeroAccord] = useState(demande.codePaiement ?? "");
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  const fictif = demande.codePaiement ? estCodePaiementFictif(demande.codePaiement) : false;
 
   async function marquerRecu() {
     setEnvoi(true);
     await fetch(`/api/paiements/${demande.codePaiement}`, { method: "POST" });
     setEnvoi(false);
     onFait();
+  }
+
+  async function enregistrerNumeroAccord() {
+    if (!numeroAccord.trim()) return;
+    setEnvoi(true);
+    setErreur(null);
+    const reponse = await fetch(`/api/demandes-mutuelle/${demandeId}/code-paiement`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ codePaiement: numeroAccord.trim() }),
+    });
+    setEnvoi(false);
+    if (reponse.ok) {
+      setEdition(false);
+      onFait();
+    } else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Erreur.");
+    }
   }
 
   return (
@@ -1886,14 +2085,59 @@ function CodePaiementInfos({
       />
       <div className="min-w-0 flex-1 text-xs">
         <p className="font-medium text-neutral-700">Code paiement</p>
+        {edition ? (
+          <div className="mt-1 space-y-1">
+            <div className="flex items-center gap-1">
+              <input
+                value={numeroAccord}
+                onChange={(e) => setNumeroAccord(e.target.value)}
+                placeholder="Numéro d'accord mutuelle"
+                className="w-32 rounded-md border border-neutral-300 px-1.5 py-1 text-xs"
+              />
+              <button
+                onClick={enregistrerNumeroAccord}
+                disabled={envoi || !numeroAccord.trim()}
+                className="rounded-md bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+              >
+                {envoi ? "…" : "OK"}
+              </button>
+              <button
+                onClick={() => {
+                  setEdition(false);
+                  setNumeroAccord(demande.codePaiement ?? "");
+                  setErreur(null);
+                }}
+                className="text-neutral-400 hover:text-neutral-600"
+              >
+                ✕
+              </button>
+            </div>
+            <CaptureNumeroAccord
+              demandeId={demandeId}
+              personneId={personneId}
+              documents={documents}
+              onValeur={setNumeroAccord}
+            />
+          </div>
+        ) : (
+          <p className="font-mono text-[11px] text-neutral-600">
+            {fictif ? "Code temporaire (fictif)" : demande.codePaiement}
+          </p>
+        )}
+        {!edition && (
+          <button onClick={() => setEdition(true)} className="mt-1 text-sky-700 hover:underline">
+            {fictif ? "Renseigner le numéro d'accord réel" : "Modifier"}
+          </button>
+        )}
+        {erreur && <p className="mt-1 text-red-600">{erreur}</p>}
         {demande.recuLeA ? (
-          <p className="text-emerald-700">
+          <p className="mt-1 text-emerald-700">
             ✅ Reçu le {new Date(demande.recuLeA).toLocaleDateString("fr-FR")}
             {demande.recuPar ? ` (${demande.recuPar})` : ""}
           </p>
         ) : (
           <>
-            <p className="text-neutral-500">Non reçu — à scanner ou saisir sur /paiements une fois le montant reçu.</p>
+            <p className="mt-1 text-neutral-500">Non reçu — à scanner ou saisir sur /paiements une fois le montant reçu.</p>
             <button
               onClick={marquerRecu}
               disabled={envoi}

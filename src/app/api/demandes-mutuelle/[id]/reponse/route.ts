@@ -73,12 +73,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       prisma.proposition.update({ where: { id: demande.propositionId }, data: { resteAChargeTTC } }),
     ]);
 
-    // Code paiement — voir lib/codePaiement.ts : généré dès que le montant
+    // Code paiement — voir lib/codePaiement.ts : assuré dès que le montant
     // est connu, pour permettre le rapprochement (pseudo tiers payant) dès
-    // maintenant, même avant réception effective des fonds. Généré après la
-    // transaction ci-dessus (upsert idempotent propre, indépendant d'elle) —
-    // on relit ensuite l'enregistrement complet pour le renvoyer à jour.
-    await assurerCodePaiement(id);
+    // maintenant, même avant réception effective des fonds. Si le numéro
+    // d'accord réel de la mutuelle est déjà connu à cet instant (extrait par
+    // OCR ou saisi à la main dans le formulaire d'accord), il est utilisé
+    // directement comme code — sinon un jeton fictif est généré, remplaçable
+    // plus tard (voir PATCH ./code-paiement). Assuré après la transaction
+    // ci-dessus (upsert idempotent propre, indépendant d'elle) — on relit
+    // ensuite l'enregistrement complet pour le renvoyer à jour.
+    const numeroAccord = typeof body.numeroAccord === "string" ? body.numeroAccord.trim() || null : null;
+    const { numeroAccordEnConflit } = await assurerCodePaiement(id, numeroAccord);
     const mise_a_jour = await prisma.demandePriseEnCharge.findUniqueOrThrow({ where: { id } });
 
     await journaliser({
@@ -90,7 +95,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       donnees: { montantPriseEnChargeTTC: montant, resteAChargeTTC },
     });
 
-    return NextResponse.json(mise_a_jour);
+    return NextResponse.json({ ...mise_a_jour, numeroAccordEnConflit });
   }
 
   const motifRefus = typeof body.motifRefus === "string" ? body.motifRefus.trim() || null : null;

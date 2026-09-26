@@ -14,6 +14,7 @@ const TYPES_VALIDES: TypeDocument[] = [
   "JUSTIFICATIF",
   "DEVIS_SIGNE",
   "CONSENTEMENT_RGPD",
+  "REPONSE_MUTUELLE",
   "AUTRE",
 ];
 const TAILLE_MAX_OCTETS = 15 * 1024 * 1024; // 15 Mo — suffisant pour un scan, évite l'upload accidentel énorme.

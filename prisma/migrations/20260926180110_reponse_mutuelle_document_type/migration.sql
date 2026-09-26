@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "TypeDocument" ADD VALUE 'REPONSE_MUTUELLE';
+
