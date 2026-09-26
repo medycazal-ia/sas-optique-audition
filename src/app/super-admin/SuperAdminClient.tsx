@@ -77,6 +77,11 @@ export default function SuperAdminClient({
               </>
             )}
           </p>
+          <p className="mt-3">
+            <Link href="/super-admin/modeles-documents" className="text-xs text-amber-400 underline hover:text-amber-300">
+              📄 Modèles de documents (Facture, Devis, Accord tiers payant)
+            </Link>
+          </p>
         </div>
       </div>
 

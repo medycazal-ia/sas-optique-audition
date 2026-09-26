@@ -1685,11 +1685,19 @@ function DemandeLigne({
       {demande.statut === "ACCORD" && (
         <p className="mt-2 text-xs text-emerald-700">
           Pris en charge : {formaterPrix(demande.montantPriseEnChargeTTC ?? 0)} · Reste à charge :{" "}
-          {formaterPrix(proposition.resteAChargeTTC ?? 0)}
+          {formaterPrix(proposition.resteAChargeTTC ?? 0)} ·{" "}
+          <a href={`/api/demandes-mutuelle/${demande.id}/formulaire`} target="_blank" rel="noopener noreferrer" className="underline">
+            🖨️ Imprimer
+          </a>
         </p>
       )}
       {demande.statut === "REFUS" && (
-        <p className="mt-2 text-xs text-red-600">Refusé{demande.motifRefus ? ` — ${demande.motifRefus}` : ""}.</p>
+        <p className="mt-2 text-xs text-red-600">
+          Refusé{demande.motifRefus ? ` — ${demande.motifRefus}` : ""} ·{" "}
+          <a href={`/api/demandes-mutuelle/${demande.id}/formulaire`} target="_blank" rel="noopener noreferrer" className="underline">
+            🖨️ Imprimer
+          </a>
+        </p>
       )}
     </li>
   );
@@ -2541,7 +2549,17 @@ function FactureDetail({ facture, onFait }: { facture: FactureAvecTout; onFait: 
         )}
       </div>
 
-      <p className="mt-1 text-xs text-neutral-600">Solde restant : {formaterPrix(Math.max(0, solde))}</p>
+      <p className="mt-1 text-xs text-neutral-600">
+        Solde restant : {formaterPrix(Math.max(0, solde))} ·{" "}
+        <a
+          href={`/api/factures/${facture.id}/formulaire`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sky-700 hover:underline"
+        >
+          🖨️ Imprimer
+        </a>
+      </p>
 
       {(facture.paiements.length > 0 || facture.avoirs.length > 0) && (
         <ul className="mt-1 space-y-0.5 text-xs text-neutral-500">
