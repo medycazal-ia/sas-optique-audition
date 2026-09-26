@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { detecterTypeMime } from "@/lib/detectionMime";
+import { detecterTypeMime, TYPES_NON_SUPPORTES_VISION, nomFormatNonSupporte } from "@/lib/detectionMime";
 
 /**
  * Extraction des informations d'une carte de mutuelle/tiers payant
@@ -45,6 +45,11 @@ export async function extraireMutuelle(contenu: Buffer, nomFichier: string): Pro
 
   const client = new Anthropic({ apiKey: cleApi });
   const mediaType = detecterTypeMime(contenu, nomFichier);
+  if (TYPES_NON_SUPPORTES_VISION.has(mediaType)) {
+    throw new Error(
+      `Format de fichier non pris en charge par l'IA de vision (${nomFormatNonSupporte(mediaType)}) — convertissez en PDF/JPEG/PNG ou renseignez les informations à la main.`,
+    );
+  }
   const donneesBase64 = contenu.toString("base64");
 
   const blocContenu =

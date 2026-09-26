@@ -4,8 +4,11 @@
  * type non standard (HEIC d'iPhone, TIFF d'un scanner...) envoyé avec la
  * mauvaise étiquette à l'IA de vision produirait sinon une image
  * indéchiffrable et une réponse en texte libre au lieu du JSON attendu.
- * Ne couvre que les types acceptés par l'API Claude (JPEG/PNG/GIF/WEBP/PDF)
- * — un type non reconnu retombe sur l'extension, dernier recours.
+ * Couvre aussi TIFF/HEIC pour les identifier explicitement (voir
+ * TYPES_NON_SUPPORTES_VISION) plutôt que de les faire passer à tort pour un
+ * JPEG — l'API Claude les rejette sinon avec une erreur 400 opaque
+ * ("Could not process image"). Un type non reconnu retombe sur l'extension,
+ * dernier recours.
  */
 export function detecterTypeMime(contenu: Buffer, nomFichier: string): string {
   if (contenu.length >= 4) {
@@ -28,6 +31,18 @@ export function detecterTypeMime(contenu: Buffer, nomFichier: string): string {
     ) {
       return "image/webp";
     }
+    if (
+      (contenu[0] === 0x49 && contenu[1] === 0x49 && contenu[2] === 0x2a && contenu[3] === 0x00) ||
+      (contenu[0] === 0x4d && contenu[1] === 0x4d && contenu[2] === 0x00 && contenu[3] === 0x2a)
+    ) {
+      return "image/tiff";
+    }
+    if (contenu.length >= 12 && contenu.subarray(4, 8).toString("ascii") === "ftyp") {
+      const marque = contenu.subarray(8, 12).toString("ascii");
+      if (/^hei[cs]$|^heix$|^hevc$|^mif1$|^msf1$/.test(marque)) {
+        return "image/heic";
+      }
+    }
   }
 
   const ext = nomFichier.toLowerCase().split(".").pop() ?? "";
@@ -35,5 +50,14 @@ export function detecterTypeMime(contenu: Buffer, nomFichier: string): string {
   if (ext === "webp") return "image/webp";
   if (ext === "gif") return "image/gif";
   if (ext === "pdf") return "application/pdf";
+  if (ext === "tif" || ext === "tiff") return "image/tiff";
+  if (ext === "heic" || ext === "heif") return "image/heic";
   return "image/jpeg";
+}
+
+/** Formats réels mais non acceptés par l'API de vision Claude — à signaler explicitement plutôt qu'à envoyer à tort sous une autre étiquette. */
+export const TYPES_NON_SUPPORTES_VISION = new Set(["image/tiff", "image/heic"]);
+
+export function nomFormatNonSupporte(mediaType: string): string {
+  return mediaType === "image/tiff" ? "TIFF" : mediaType === "image/heic" ? "HEIC" : mediaType;
 }

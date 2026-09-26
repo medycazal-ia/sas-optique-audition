@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { parserMesureOeil, validerFiness, validerRpps, type MesureOeil } from "@/lib/optique";
-import { detecterTypeMime } from "@/lib/detectionMime";
+import { detecterTypeMime, TYPES_NON_SUPPORTES_VISION, nomFormatNonSupporte } from "@/lib/detectionMime";
 
 /**
  * Extraction des mesures d'une ordonnance optique scannée, par IA de
@@ -62,6 +62,11 @@ export async function extraireMesuresOrdonnance(contenu: Buffer, nomFichier: str
 
   const client = new Anthropic({ apiKey: cleApi });
   const mediaType = detecterTypeMime(contenu, nomFichier);
+  if (TYPES_NON_SUPPORTES_VISION.has(mediaType)) {
+    throw new Error(
+      `Format de fichier non pris en charge par l'IA de vision (${nomFormatNonSupporte(mediaType)}) — convertissez en PDF/JPEG/PNG ou renseignez les informations à la main.`,
+    );
+  }
   const donneesBase64 = contenu.toString("base64");
 
   const blocContenu =
