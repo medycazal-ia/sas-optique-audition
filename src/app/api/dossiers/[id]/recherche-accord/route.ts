@@ -56,7 +56,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         headers: { Authorization: `Token ${apiToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      resultats.push({ boite: boite.nom, ok: reponse.ok, erreur: reponse.ok ? undefined : `HTTP ${reponse.status}` });
+      if (reponse.ok) {
+        resultats.push({ boite: boite.nom, ok: true });
+        continue;
+      }
+      const corpsErreur = await reponse.json().catch(() => null);
+      const messageErreur: string = corpsErreur?.message ?? corpsErreur?.detail?.message ?? "";
+      // Le scénario Make peut déjà être en cours d'exécution (passage planifié
+      // ou clic précédent) au moment du clic — ce n'est pas un échec : une
+      // recherche est bel et bien en train de se faire, inutile d'en relancer
+      // une deuxième en parallèle.
+      if (/already being executed/i.test(messageErreur)) {
+        resultats.push({ boite: boite.nom, ok: true, erreur: "Une recherche est déjà en cours pour cette boîte — pas besoin d'en relancer une autre." });
+        continue;
+      }
+      resultats.push({ boite: boite.nom, ok: false, erreur: messageErreur || `HTTP ${reponse.status}` });
     } catch (e) {
       resultats.push({ boite: boite.nom, ok: false, erreur: e instanceof Error ? e.message : "Erreur réseau." });
     }
