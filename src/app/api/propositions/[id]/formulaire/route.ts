@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { genererDevisPdf } from "@/lib/devisPdf";
+import { modeleActif } from "@/lib/modelesDocuments";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -20,6 +21,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ erreur: "Proposition introuvable." }, { status: 404 });
   }
 
+  const modele = await modeleActif(proposition.cent100Sante ? "DEVIS_NORMALISE" : "DEVIS_NON_NORMALISE");
+
   const pdf = await genererDevisPdf({
     prenom: proposition.personne.prenom,
     nom: proposition.personne.nom,
@@ -29,6 +32,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       quantite: l.quantite,
       prixUnitaireTTC: l.prixUnitaireTTC,
     })),
+    normalise: proposition.cent100Sante,
+    modele,
   });
 
   return new NextResponse(new Uint8Array(pdf), {

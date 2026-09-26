@@ -262,6 +262,36 @@ toute acceptation, quel que soit le mode) est factorisée dans
 validation à l'écran (`POST .../decision`) et la signature électronique
 (`POST .../accepter-signature`).
 
+## Modèles de documents (Super Admin) — Facture, Devis, Accord tiers payant
+
+Carte Super Admin → **📄 Modèles de documents** (`/super-admin/modeles-documents`) :
+"un espace pour configurer ces documents à sa guise, sauvegarder et
+switcher". Pour chacun des 4 types (**Facture**, **Devis normalisé**,
+**Devis non normalisé**, **Accord tiers payant**), on peut enregistrer
+plusieurs modèles nommés (en-tête — nom/adresse/SIRET/téléphone/email —,
+texte d'introduction, pied de page/mentions légales), et **activer** celui
+qu'on veut utiliser : un seul actif à la fois par type, mais les autres
+restent enregistrés et réactivables à tout moment (`model ModeleDocument`,
+`POST .../activer`).
+
+Les PDF (`src/lib/facturePdf.ts`, `src/lib/devisPdf.ts`,
+`src/lib/accordTiersPayantPdf.ts`, en-tête/pied de page partagés dans
+`src/lib/pdfCommun.ts`) lisent automatiquement le modèle actif de leur type
+(`src/lib/modelesDocuments.ts`) au moment de la génération — sans modèle
+configuré, ils retombent sur une mise en page sobre par défaut plutôt que
+d'échouer. Boutons "🖨️ Imprimer" ajoutés sur la facture (carte
+Facturation) et sur la réponse mutuelle (carte Mutuelle & tiers payant).
+
+**"Devis normalisé" — limite honnête à connaître** : ce type reproduit la
+structure générale attendue par la réglementation optique 100% Santé
+(arrêté du 3 décembre 2018 — deux offres distinctes, "100% Santé" et
+"marché libre"), retrouvée par recherche documentaire, **pas un modèle
+certifié conforme**. `docs/dossier-cadrage.md` indique déjà qu'une
+génération réellement conforme nécessite une revue par un expert
+métier/juridique avant tout usage réel avec des clients — un avertissement
+est affiché en clair sur le PDF généré et dans l'écran de configuration
+pour ne jamais laisser croire le contraire.
+
 ## Conformité données de santé
 
 **Important, à lire avant toute mise en production** :

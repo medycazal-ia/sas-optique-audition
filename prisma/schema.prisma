@@ -786,3 +786,41 @@ enum DecisionSAV {
   ECHANGE
   REMBOURSEMENT
 }
+
+// --- Modèles de documents (configurables depuis le Super Admin) -------------
+// "Donne-moi un espace pour configurer ces documents à ma guise et que je
+// puisse sauvegarder et switcher si je le souhaite" — plusieurs modèles
+// nommés par type de document, un seul actif à la fois par type (basculer
+// entre eux ne perd jamais les autres, contrairement à un simple champ de
+// configuration unique écrasé à chaque changement).
+
+enum TypeModeleDocument {
+  FACTURE
+  DEVIS_NORMALISE
+  DEVIS_NON_NORMALISE
+  ACCORD_TIERS_PAYANT
+}
+
+/// Un modèle configure l'en-tête (identité affichée sur le document) et le
+/// pied de page (mentions légales, CGV...) d'un type de document précis.
+/// "actif" désigne celui utilisé pour générer le PDF de ce type — un seul à
+/// la fois (voir /api/super-admin/modeles-documents/:id/activer), les
+/// autres restent enregistrés et réactivables à tout moment.
+model ModeleDocument {
+  id       String             @id @default(cuid())
+  creeA    DateTime           @default(now())
+  modifieA DateTime           @updatedAt
+  type     TypeModeleDocument
+  nom      String // nom donné par l'utilisateur, pour distinguer plusieurs modèles du même type
+  actif    Boolean            @default(false)
+
+  enteteNom       String?
+  enteteAdresse   String?
+  enteteSiret     String?
+  enteteTelephone String?
+  enteteEmail     String?
+  texteIntro      String?
+  piedDePage      String?
+
+  @@index([type])
+}
