@@ -92,18 +92,28 @@ function normaliserNomFichier(nomFichier: string): string {
   return normaliser(nomFichier.replace(/\.[a-z0-9]{2,5}$/i, ""));
 }
 
+/** Échappe les caractères spéciaux d'une regex dans une chaîne utilisateur (nom/prénom). */
+function echapperRegex(texte: string): string {
+  return texte.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Cherche, parmi les patients ayant une demande en attente, celui dont le nom
- * ET le prénom apparaissent TOUS LES DEUX dans un texte déjà normalisé
- * (sujet, corps du mail, ou nom de la pièce jointe — voir les trois appels
- * dans traiterMailAccordMutuelle, chacun dans l'ordre de priorité demandé :
- * sujet, puis corps, puis nom du fichier). Le nom seul, sans le prénom,
- * n'est jamais suffisant : il peut apparaître par coïncidence (signature de
- * l'expéditeur, société, tiers cité) — constaté en production avec un
- * patient dont le nom de famille coïncidait avec celui de l'opticien
- * lui-même, ce qui avait fait attacher des documents sans rapport au mauvais
- * dossier. N'en retourne un que si un seul patient correspond (ambiguïté
- * entre plusieurs personnes -> null, jamais de choix arbitraire).
+ * ET le prénom apparaissent COLLÉS L'UN À L'AUTRE (dans un ordre ou l'autre,
+ * séparés seulement par des espaces — "malika cazal" ou "cazal malika") dans
+ * un texte déjà normalisé (sujet, corps du mail, ou nom de la pièce jointe —
+ * voir les trois appels dans traiterMailAccordMutuelle, chacun dans l'ordre
+ * de priorité demandé : sujet, puis corps, puis nom du fichier).
+ *
+ * Ni le nom seul, ni le nom et le prénom présents séparément quelque part
+ * dans le texte, ne suffisent : les deux constatés en production comme
+ * source de faux positifs (nom coïncidant avec un tiers cité dans le corps
+ * du mail — signature, société — ; un mail listant plusieurs personnes dont
+ * le nom ET le prénom du patient apparaissent chacun ailleurs dans le texte,
+ * sans rapport l'un avec l'autre). Exiger qu'ils soient accolés, comme dans
+ * un vrai nom complet écrit intentionnellement, élimine ces deux risques.
+ * N'en retourne un que si un seul patient correspond (ambiguïté entre
+ * plusieurs personnes -> null, jamais de choix arbitraire).
  */
 function patientDepuisTexte(texteNormalise: string, personnes: PersonneEnAttente[]): { nom: string; prenom: string } | null {
   if (!texteNormalise) return null;
@@ -112,7 +122,10 @@ function patientDepuisTexte(texteNormalise: string, personnes: PersonneEnAttente
     const nom = normaliser(p.nom);
     const prenom = p.prenom ? normaliser(p.prenom) : null;
     if (nom.length < 2 || !prenom || prenom.length < 2) continue;
-    if (texteNormalise.includes(nom) && texteNormalise.includes(prenom)) {
+    const nomEch = echapperRegex(nom);
+    const prenomEch = echapperRegex(prenom);
+    const motsColles = new RegExp(`\\b(${prenomEch}\\s+${nomEch}|${nomEch}\\s+${prenomEch})\\b`);
+    if (motsColles.test(texteNormalise)) {
       correspondances.set(p.id, p);
     }
   }
