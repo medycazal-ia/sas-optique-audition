@@ -2147,6 +2147,7 @@ function DemandeLigne({
 function RefusInfos({ personneId, demandeId, motifRefus }: { personneId: string; demandeId: string; motifRefus: string | null }) {
   const router = useRouter();
   const [enCours, setEnCours] = useState(false);
+  const [enCoursReouverture, setEnCoursReouverture] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   async function relancer() {
@@ -2163,6 +2164,20 @@ function RefusInfos({ personneId, demandeId, motifRefus }: { personneId: string;
     }
   }
 
+  async function repasserEnAttente() {
+    setEnCoursReouverture(true);
+    setMessage(null);
+    const reponse = await fetch(`/api/demandes-mutuelle/${demandeId}/repasser-en-attente`, { method: "POST" });
+    const data = await reponse.json().catch(() => ({}));
+    setEnCoursReouverture(false);
+    if (reponse.ok) {
+      setMessage("Demande remise en attente.");
+      router.refresh();
+    } else {
+      setMessage(data.erreur ?? "Impossible de remettre la demande en attente.");
+    }
+  }
+
   return (
     <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-2">
       <div className="flex items-center justify-between gap-2">
@@ -2173,13 +2188,22 @@ function RefusInfos({ personneId, demandeId, motifRefus }: { personneId: string;
           🖨️ Imprimer
         </a>
       </div>
-      <button
-        onClick={relancer}
-        disabled={enCours}
-        className="mt-1 rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
-      >
-        {enCours ? "…" : "🔍 Relancer la recherche par mail"}
-      </button>
+      <div className="mt-1 flex flex-wrap gap-2">
+        <button
+          onClick={relancer}
+          disabled={enCours}
+          className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+        >
+          {enCours ? "…" : "🔍 Relancer la recherche par mail"}
+        </button>
+        <button
+          onClick={repasserEnAttente}
+          disabled={enCoursReouverture}
+          className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+        >
+          {enCoursReouverture ? "…" : "↩️ Repasser en attente"}
+        </button>
+      </div>
       {message && <p className="mt-1 text-xs text-red-600">{message}</p>}
     </div>
   );
