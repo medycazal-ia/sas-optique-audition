@@ -10,6 +10,12 @@ import { extraireAccordMutuelle, extraireAccordMutuelleDepuisTexte, type Resulta
  * plusieurs boîtes mail (voir prisma BoiteMailTiersPayant) et relaie chaque
  * mail avec pièce jointe à /api/automatisations/accord-mutuelle-entrant.
  *
+ * Filtre de pertinence (avant toute extraction, pour limiter le bruit et le
+ * coût OCR) : mots-clés habituels (accord/refus/rejet/pec) OU nom d'un
+ * patient ayant une demande en attente — un modèle de mail de mutuelle sans
+ * les mots-clés usuels ne doit pas passer à la trappe alors que le nom du
+ * patient, lui, est toujours présent.
+ *
  * Principe de prudence ("il ne doit y avoir aucune erreur") : n'applique
  * automatiquement un changement de statut ACCORD/REFUS que lorsque le
  * dossier concerné est identifié sans ambiguïté (numéro de sécurité sociale
@@ -79,8 +85,31 @@ const STATUTS_EN_ATTENTE = ["A_ENVOYER", "ENVOYEE", "EN_ATTENTE"] as const;
 
 export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Promise<ResultatTraitementMail> {
   const texteRecherche = `${payload.subject}\n${payload.bodyText}`;
-  if (!MOTS_CLES_PERTINENCE.test(texteRecherche)) {
-    return { traite: false, apparie: false, personneId: null, demandeId: null, action: null, raison: "Mots-clés absents — mail ignoré." };
+  const texteRechercheNormalise = normaliser(texteRecherche);
+
+  // Identification du dossier — NSS en priorité (le plus fiable), sinon
+  // nom+prénom exacts, sinon nom seul si le document ne donne pas le prénom.
+  // DemandePriseEnCharge.personneId n'est pas une relation Prisma déclarée
+  // (voir schema.prisma) : on rejoint donc les deux requêtes à la main.
+  // Récupéré avant le filtre mots-clés : le nom du patient, toujours présent
+  // dans un vrai mail de mutuelle, sert aussi de signal de pertinence (voir
+  // ci-dessous) — un modèle de mail sans les mots-clés habituels ne doit pas
+  // faire passer à la trappe un vrai accord/refus.
+  const demandesEnAttente = await prisma.demandePriseEnCharge.findMany({
+    where: { statut: { in: [...STATUTS_EN_ATTENTE] } },
+  });
+  const personnesConcernees = await prisma.personne.findMany({
+    where: { id: { in: [...new Set(demandesEnAttente.map((d) => d.personneId))] } },
+  });
+  const personneParId = new Map(personnesConcernees.map((p) => [p.id, p]));
+
+  const nomPatientEnAttentePresent = personnesConcernees.some((p) => {
+    const nom = normaliser(p.nom);
+    return nom.length >= 2 && texteRechercheNormalise.includes(nom);
+  });
+
+  if (!MOTS_CLES_PERTINENCE.test(texteRecherche) && !nomPatientEnAttentePresent) {
+    return { traite: false, apparie: false, personneId: null, demandeId: null, action: null, raison: "Mots-clés absents et aucun nom de patient en attente reconnu — mail ignoré." };
   }
 
   // Extraction : la pièce jointe (document officiel) fait foi en priorité ;
@@ -117,18 +146,8 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
     }
   }
 
-  // Identification du dossier — NSS en priorité (le plus fiable), sinon
-  // nom+prénom exacts, sinon nom seul si le document ne donne pas le prénom.
-  // DemandePriseEnCharge.personneId n'est pas une relation Prisma déclarée
-  // (voir schema.prisma) : on rejoint donc les deux requêtes à la main.
-  const demandesEnAttente = await prisma.demandePriseEnCharge.findMany({
-    where: { statut: { in: [...STATUTS_EN_ATTENTE] } },
-  });
-  const personnesConcernees = await prisma.personne.findMany({
-    where: { id: { in: [...new Set(demandesEnAttente.map((d) => d.personneId))] } },
-  });
-  const personneParId = new Map(personnesConcernees.map((p) => [p.id, p]));
-
+  // Rapprochement — demandesEnAttente/personnesConcernees/personneParId déjà
+  // récupérées plus haut (elles servent aussi au filtre de pertinence).
   let candidates = demandesEnAttente;
   if (extraction.patientNumeroSecuriteSociale) {
     const nss = extraction.patientNumeroSecuriteSociale.replace(/\s+/g, "");
