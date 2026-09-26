@@ -315,7 +315,14 @@ model Document {
   cheminStockage String // référence vers le stockage de fichiers (S3-compatible HDS en prod)
   ordonnance     Ordonnance?
 
+  // Renseigné pour un DEVIS_SIGNE issu d'une signature au stylet ou d'un
+  // papier scanné — distingue de quelle proposition précise il s'agit
+  // (un même dossier peut avoir plusieurs devis au fil du temps).
+  propositionId String?
+  proposition   Proposition? @relation(fields: [propositionId], references: [id])
+
   @@index([personneId])
+  @@index([propositionId])
 }
 
 enum TypeDocument {
@@ -445,9 +452,14 @@ model Proposition {
   remplace     Proposition? @relation("VersionProposition", fields: [remplaceId], references: [id])
   remplaceePar Proposition? @relation("VersionProposition")
 
-  lignes    PropositionLigne[]
-  demandes  DemandePriseEnCharge[]
-  commandes Commande[]
+  // Comment l'acceptation a été recueillie — voir ModeSignature. Nul tant
+  // que la proposition n'est pas (encore) acceptée.
+  signatureMode ModeSignature?
+
+  lignes             PropositionLigne[]
+  demandes           DemandePriseEnCharge[]
+  commandes          Commande[]
+  documentsSignature Document[]
 
   @@index([personneId])
   @@index([statut])
@@ -459,6 +471,17 @@ enum StatutProposition {
   ACCEPTEE
   REFUSEE
   EXPIREE
+}
+
+/// Comment le client a signé son acceptation d'une proposition (ou son
+/// consentement RGPD) — même logique, même choix pour les deux : validation
+/// à l'écran par un membre de l'équipe, signature au stylet/écran tactile,
+/// code à usage unique par SMS, ou document papier signé puis scanné.
+enum ModeSignature {
+  ECRAN
+  PAD
+  SMS
+  PAPIER
 }
 
 /// Ligne de proposition. prixUnitaireTTC et libelleProduit sont un instantané

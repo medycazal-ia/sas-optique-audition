@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
+import { creerDemandePriseEnCharge } from "@/lib/demandesPriseEnCharge";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -33,7 +34,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   const mise_a_jour = await prisma.proposition.update({
     where: { id },
-    data: { statut: decision, decideeA: new Date() },
+    data: {
+      statut: decision,
+      decideeA: new Date(),
+      // Cette route est la validation "à l'écran" par un membre de
+      // l'équipe — voir ModeSignature pour les autres façons d'accepter
+      // (stylet, code SMS, papier scanné), gérées par une route dédiée.
+      ...(decision === "ACCEPTEE" ? { signatureMode: "ECRAN" as const } : {}),
+    },
   });
 
   await journaliser({
@@ -49,30 +57,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   // (critère d'acceptation V1 du module) — jamais de demande "perdue" faute
   // de création manuelle.
   if (decision === "ACCEPTEE") {
-    // FINESS/RPPS du prescripteur — une mutuelle les exige sur toute demande
-    // de prise en charge ; copiés depuis la dernière ordonnance optique du
-    // dossier au moment de la création (instantané, jamais recalculé après).
-    const derniereOrdonnance = await prisma.ordonnance.findFirst({
-      where: { personneId: proposition.personneId, type: "OPTIQUE" },
-      orderBy: { dateEmission: "desc" },
-      select: { finess: true, rpps: true },
-    });
-
-    const demande = await prisma.demandePriseEnCharge.create({
-      data: {
-        propositionId: id,
-        personneId: proposition.personneId,
-        finess: derniereOrdonnance?.finess ?? null,
-        rpps: derniereOrdonnance?.rpps ?? null,
-      },
-    });
-    await journaliser({
-      type: "demande-mutuelle.creee",
-      entite: "DemandePriseEnCharge",
-      entiteId: demande.id,
-      personneId: proposition.personneId,
-      acteur: session?.email,
-    });
+    await creerDemandePriseEnCharge({ propositionId: id, personneId: proposition.personneId, acteur: session?.email });
   }
 
   return NextResponse.json(mise_a_jour);

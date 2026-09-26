@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Produit, Proposition, PropositionLigne } from "@prisma/client";
 import { formaterPrix } from "@/lib/argent";
+import PadSignature from "@/components/PadSignature";
 
 type PropositionComplete = Proposition & {
-  personne: { id: string; prenom: string; nom: string };
+  personne: { id: string; prenom: string; nom: string; telephone: string | null };
   lignes: (PropositionLigne & { produit: Produit })[];
   remplace: { id: string; statut: string; creeA: Date } | null;
   remplaceePar: { id: string; statut: string; creeA: Date } | null;
@@ -105,7 +106,7 @@ export default function PropositionDetailClient({ proposition }: { proposition: 
 
       {estBrouillon && <NotesEtOptions proposition={proposition} onFait={actualiser} />}
 
-      <Actions proposition={proposition} onFait={actualiser} />
+      <Actions proposition={proposition} telephone={proposition.personne.telephone} onFait={actualiser} />
     </div>
   );
 }
@@ -258,10 +259,19 @@ function NotesEtOptions({ proposition, onFait }: { proposition: Proposition; onF
   );
 }
 
-function Actions({ proposition, onFait }: { proposition: Proposition; onFait: () => void }) {
+function Actions({
+  proposition,
+  telephone,
+  onFait,
+}: {
+  proposition: Proposition;
+  telephone: string | null;
+  onFait: () => void;
+}) {
   const router = useRouter();
   const [envoi, setEnvoi] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [popupOuverte, setPopupOuverte] = useState(false);
 
   async function envoyer() {
     setEnvoi(true);
@@ -319,11 +329,11 @@ function Actions({ proposition, onFait }: { proposition: Proposition; onFait: ()
       {proposition.statut === "ENVOYEE" && (
         <>
           <button
-            onClick={() => decider("ACCEPTEE")}
+            onClick={() => setPopupOuverte(true)}
             disabled={envoi}
             className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            Marquer acceptée
+            ✅ Accepter la proposition
           </button>
           <button
             onClick={() => decider("REFUSEE")}
@@ -343,7 +353,245 @@ function Actions({ proposition, onFait }: { proposition: Proposition; onFait: ()
           Composer une nouvelle version
         </button>
       )}
+      {proposition.statut === "ACCEPTEE" && proposition.signatureMode && (
+        <span className="text-xs text-neutral-500">
+          Acceptée via {LIBELLE_MODE_SIGNATURE[proposition.signatureMode]}
+          {proposition.decideeA && <> le {new Date(proposition.decideeA).toLocaleDateString("fr-FR")}</>}.
+        </span>
+      )}
       {message && <span className="text-sm text-red-600">{message}</span>}
+      {popupOuverte && (
+        <PopupSignatureProposition
+          propositionId={proposition.id}
+          personneId={proposition.personneId}
+          telephone={telephone}
+          onFermer={() => setPopupOuverte(false)}
+          onValide={() => {
+            setPopupOuverte(false);
+            onFait();
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+const LIBELLE_MODE_SIGNATURE: Record<string, string> = {
+  ECRAN: "validation à l'écran",
+  PAD: "signature au stylet/écran tactile",
+  SMS: "code SMS",
+  PAPIER: "document papier signé",
+};
+
+/**
+ * Pop-up de signature de l'acceptation d'une proposition — mêmes 4 options
+ * que le consentement RGPD (voir DossierDetailClient.tsx > PopupRgpd) :
+ * validation à l'écran, signature au stylet/écran tactile, code SMS, ou
+ * document papier imprimé puis signé/scanné.
+ */
+function PopupSignatureProposition({
+  propositionId,
+  personneId,
+  telephone,
+  onFermer,
+  onValide,
+}: {
+  propositionId: string;
+  personneId: string;
+  telephone: string | null;
+  onFermer: () => void;
+  onValide: () => void;
+}) {
+  const [padOuvert, setPadOuvert] = useState(false);
+  const [smsOuvert, setSmsOuvert] = useState(false);
+  const [codeEnvoye, setCodeEnvoye] = useState(false);
+  const [code, setCode] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const inputFichier = useRef<HTMLInputElement | null>(null);
+
+  async function validerEcran() {
+    setEnvoi(true);
+    setErreur(null);
+    const reponse = await fetch(`/api/propositions/${propositionId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "ACCEPTEE" }),
+    });
+    setEnvoi(false);
+    if (reponse.ok) onValide();
+    else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Erreur.");
+    }
+  }
+
+  async function accepterAvecDocument(mode: "PAD" | "PAPIER", fichier: File) {
+    setEnvoi(true);
+    setErreur(null);
+    const formulaire = new FormData();
+    formulaire.append("type", "DEVIS_SIGNE");
+    formulaire.append("fichier", fichier);
+    const reponseUpload = await fetch(`/api/dossiers/${personneId}/documents`, { method: "POST", body: formulaire });
+    if (!reponseUpload.ok) {
+      setEnvoi(false);
+      setErreur("Échec du téléversement du document.");
+      return;
+    }
+    const document = await reponseUpload.json();
+    const reponse = await fetch(`/api/propositions/${propositionId}/accepter-signature`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, documentId: document.id }),
+    });
+    setEnvoi(false);
+    if (reponse.ok) onValide();
+    else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Erreur.");
+    }
+  }
+
+  async function envoyerCode() {
+    setEnvoi(true);
+    setErreur(null);
+    const reponse = await fetch(`/api/propositions/${propositionId}/signature-sms/envoyer`, { method: "POST" });
+    setEnvoi(false);
+    if (reponse.ok) setCodeEnvoye(true);
+    else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Échec de l'envoi du code.");
+    }
+  }
+
+  async function verifierCode() {
+    setEnvoi(true);
+    setErreur(null);
+    const reponse = await fetch(`/api/propositions/${propositionId}/accepter-signature`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "SMS", code }),
+    });
+    setEnvoi(false);
+    if (reponse.ok) onValide();
+    else {
+      const data = await reponse.json().catch(() => ({}));
+      setErreur(data.erreur ?? "Code invalide.");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="text-base font-semibold text-neutral-900">✅ Accepter la proposition</h3>
+        <p className="mt-2 text-sm text-neutral-600">Choisissez comment le client donne son accord.</p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <button
+            onClick={validerEcran}
+            disabled={envoi}
+            className="rounded-md bg-neutral-900 px-3 py-2 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+          >
+            ✅ Le client valide maintenant sur cet écran
+          </button>
+          <button
+            onClick={() => setPadOuvert(true)}
+            disabled={envoi}
+            className="rounded-md border border-neutral-300 px-3 py-2 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+          >
+            ✍️ Signer au stylet / à l&apos;écran tactile
+          </button>
+          <button
+            onClick={() => setSmsOuvert((v) => !v)}
+            disabled={envoi}
+            className="rounded-md border border-neutral-300 px-3 py-2 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50"
+          >
+            📱 Signer par code SMS
+          </button>
+          <a
+            href={`/api/propositions/${propositionId}/formulaire`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-md border border-neutral-300 px-3 py-2 text-center text-xs font-medium hover:bg-neutral-50"
+          >
+            🖨️ Imprimer le devis à signer sur papier
+          </a>
+        </div>
+
+        {smsOuvert && (
+          <div className="mt-3 space-y-2 rounded-md border border-sky-200 bg-sky-50 p-3">
+            {!telephone?.trim() && !codeEnvoye ? (
+              <p className="text-xs text-neutral-600">
+                Un code à usage unique sera envoyé au numéro renseigné sur le dossier.
+              </p>
+            ) : null}
+            {!codeEnvoye ? (
+              <button
+                onClick={envoyerCode}
+                disabled={envoi}
+                className="rounded-md bg-sky-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-800 disabled:opacity-50"
+              >
+                {envoi ? "Envoi…" : "Envoyer le code"}
+              </button>
+            ) : (
+              <>
+                <p className="text-xs text-neutral-600">Code envoyé — saisissez-le ci-dessous.</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    placeholder="123456"
+                    className="w-28 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+                  />
+                  <button
+                    onClick={verifierCode}
+                    disabled={envoi || !code.trim()}
+                    className="rounded-md bg-sky-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-800 disabled:opacity-50"
+                  >
+                    {envoi ? "Vérification…" : "Valider le code"}
+                  </button>
+                </div>
+                <button onClick={envoyerCode} disabled={envoi} className="text-xs text-sky-700 hover:underline">
+                  Renvoyer un code
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        <input
+          ref={inputFichier}
+          type="file"
+          accept="image/*,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const fichier = e.target.files?.[0];
+            if (fichier) accepterAvecDocument("PAPIER", fichier);
+          }}
+        />
+        <button
+          onClick={() => inputFichier.current?.click()}
+          disabled={envoi}
+          className="mt-3 text-xs text-neutral-500 hover:underline disabled:opacity-50"
+        >
+          📎 J&apos;ai déjà le devis signé scanné — le téléverser
+        </button>
+
+        {erreur && <p className="mt-2 text-xs text-red-600">{erreur}</p>}
+        <button onClick={onFermer} className="mt-3 block text-xs text-neutral-400 hover:underline">
+          Annuler
+        </button>
+      </div>
+
+      {padOuvert && (
+        <PadSignature
+          titre="Signature de l'acceptation du devis"
+          onFermer={() => setPadOuvert(false)}
+          onSigner={(fichier) => {
+            setPadOuvert(false);
+            accepterAvecDocument("PAD", fichier);
+          }}
+        />
+      )}
+    </div>
   );
 }

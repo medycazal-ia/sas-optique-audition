@@ -12,7 +12,7 @@ export default async function PropositionPage({ params }: { params: Promise<{ id
   const proposition = await prisma.proposition.findUnique({
     where: { id },
     include: {
-      personne: { select: { id: true, prenom: true, nom: true } },
+      personne: { select: { id: true, prenom: true, nom: true, telephone: true } },
       lignes: { include: { produit: true }, orderBy: { creeA: "asc" } },
       remplace: { select: { id: true, statut: true, creeA: true } },
       remplaceePar: { select: { id: true, statut: true, creeA: true } },
