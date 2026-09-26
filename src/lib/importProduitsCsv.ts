@@ -1,6 +1,7 @@
 import type { TypeOrdonnance, TypeProduit } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { calculerDescriptionProduit } from "@/lib/descriptionProduit";
+import { completerTarif } from "@/lib/tarificationProduit";
 
 /**
  * Modèle d'import/export CSV en masse des produits — colonnes demandées :
@@ -225,11 +226,6 @@ export async function importerProduitsCsv(
       }
 
       const prixTTC = euroVersCentimesOptionnel(get("prix_public_ttc"));
-      if (!existant && prixTTC === null) {
-        erreurs.push({ ligne: numeroLigne, reference, statut: "creee", erreur: "prix_public_ttc requis pour créer un nouveau produit." });
-        continue;
-      }
-
       const taille = texteOptionnel(get("taille"));
       const coloris = texteOptionnel(get("coloris"));
       const nomenclature = texteOptionnel(get("nomenclature"));
@@ -238,8 +234,6 @@ export async function importerProduitsCsv(
       const prixVenteHT = euroVersCentimesOptionnel(get("prix_vente_ht"));
       const plafondRemisePct = nombreOptionnel(get("plafond_remise"));
       const plafondRemise = plafondRemisePct === null ? null : plafondRemisePct / 100;
-      const prixAchat = euroVersCentimesOptionnel(get("prix_achat"));
-      const coefficient = nombreOptionnel(get("coefficient"));
       const dateDerniereSortieBrute = texteOptionnel(get("date_derniere_sortie"));
       const dateDerniereSortie = dateDerniereSortieBrute ? new Date(dateDerniereSortieBrute) : null;
       const qrcode = texteOptionnel(get("qrcode"));
@@ -247,15 +241,41 @@ export async function importerProduitsCsv(
       const remarque = texteOptionnel(get("remarque"));
       const activite = ACTIVITES_CSV.includes(activiteBrute as TypeOrdonnance) ? (activiteBrute as TypeOrdonnance) : undefined;
 
-      const prixTTCFinal = prixTTC ?? existant?.prixTTC ?? 0;
+      // Rubriques tarifaires manquantes déduites de celles fournies sur la
+      // ligne ou déjà en base (prix achat HT × coefficient → prix vente HT
+      // → + TVA → prix TTC, et sens inverse) — voir lib/tarificationProduit.ts.
+      // Calculé avant le contrôle du prix TTC ci-dessous : un prix achat +
+      // coefficient + taux TVA suffit à créer un produit sans prix_public_ttc
+      // saisi explicitement sur la ligne.
+      const tarif = completerTarif({
+        prixAchat: euroVersCentimesOptionnel(get("prix_achat")) ?? existant?.prixAchat ?? null,
+        coefficient: nombreOptionnel(get("coefficient")) ?? existant?.coefficient ?? null,
+        tauxTva: tauxTva ?? existant?.tauxTva ?? null,
+        prixVenteHT: prixVenteHT ?? existant?.prixVenteHT ?? null,
+        prixTTC: prixTTC ?? existant?.prixTTC ?? null,
+      });
+      const prixAchat = tarif.prixAchat;
+      const coefficient = tarif.coefficient;
+
+      if (!existant && tarif.prixTTC === null) {
+        erreurs.push({
+          ligne: numeroLigne,
+          reference,
+          statut: "creee",
+          erreur: "prix_public_ttc requis pour créer un nouveau produit (ou prix_achat + coefficient + taux_tva permettant de le calculer).",
+        });
+        continue;
+      }
+      const prixTTCFinal = tarif.prixTTC ?? existant?.prixTTC ?? 0;
+
       const description = calculerDescriptionProduit({
         modele: nom || existant?.modele || "",
         taille: taille ?? existant?.taille ?? null,
         coloris: coloris ?? existant?.coloris ?? null,
         nomenclature: nomenclature ?? existant?.nomenclature ?? null,
         prixTTC: prixTTCFinal,
-        tauxTva: tauxTva ?? existant?.tauxTva ?? null,
-        prixVenteHT: prixVenteHT ?? existant?.prixVenteHT ?? null,
+        tauxTva: tarif.tauxTva,
+        prixVenteHT: tarif.prixVenteHT,
       });
 
       const donneesCommunes = {
@@ -266,8 +286,8 @@ export async function importerProduitsCsv(
         ...(nomenclature !== null ? { nomenclature } : {}),
         ...(prixAchat !== null ? { prixAchat } : {}),
         ...(coefficient !== null ? { coefficient } : {}),
-        ...(tauxTva !== null ? { tauxTva } : {}),
-        ...(prixVenteHT !== null ? { prixVenteHT } : {}),
+        ...(tarif.tauxTva !== null ? { tauxTva: tarif.tauxTva } : {}),
+        ...(tarif.prixVenteHT !== null ? { prixVenteHT: tarif.prixVenteHT } : {}),
         ...(plafondRemise !== null ? { plafondRemise } : {}),
         ...(remarque !== null ? { remarque } : {}),
         ...(dateDerniereSortie !== null ? { dateDerniereSortie } : {}),
@@ -299,10 +319,10 @@ export async function importerProduitsCsv(
             marque,
             modele: nom,
             reference,
-            prixTTC: prixTTC!,
+            prixTTC: prixTTCFinal,
             qrcode: qrcode ?? reference,
             ...donneesCommunes,
-            historiquePrix: { create: { prixTTC: prixTTC!, modifiePar } },
+            historiquePrix: { create: { prixTTC: prixTTCFinal, modifiePar } },
           },
         });
         produitId = cree.id;

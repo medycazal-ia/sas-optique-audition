@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
 import { calculerDescriptionProduit } from "@/lib/descriptionProduit";
+import { type ChampTarif, type ValeursTarif, completerTarif } from "@/lib/tarificationProduit";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -101,6 +102,24 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const prixChange = nouveauPrix !== undefined && Number.isFinite(nouveauPrix) && nouveauPrix >= 0;
   if (prixChange) {
     donnees.prixTTC = nouveauPrix;
+  }
+
+  // Rubriques tarifaires manquantes déduites de celles fournies/existantes
+  // (prix achat HT × coefficient → prix vente HT → + TVA → prix TTC, et
+  // sens inverse) — voir lib/tarificationProduit.ts. Ne complète jamais une
+  // valeur déjà présente (fournie dans cette requête ou déjà en base).
+  const avantCompletion: ValeursTarif = {
+    prixAchat: ("prixAchat" in donnees ? donnees.prixAchat : produitActuel.prixAchat) as number | null,
+    coefficient: ("coefficient" in donnees ? donnees.coefficient : produitActuel.coefficient) as number | null,
+    tauxTva: ("tauxTva" in donnees ? donnees.tauxTva : produitActuel.tauxTva) as number | null,
+    prixVenteHT: ("prixVenteHT" in donnees ? donnees.prixVenteHT : produitActuel.prixVenteHT) as number | null,
+    prixTTC: prixChange ? nouveauPrix! : produitActuel.prixTTC,
+  };
+  const tarifComplete = completerTarif(avantCompletion);
+  for (const champ of Object.keys(tarifComplete) as ChampTarif[]) {
+    if (avantCompletion[champ] == null && tarifComplete[champ] != null) {
+      donnees[champ] = tarifComplete[champ];
+    }
   }
 
   if (Object.keys(donnees).length === 0) {
