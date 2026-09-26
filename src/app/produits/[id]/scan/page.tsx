@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { lireSession } from "@/lib/auth";
 import ScanProduitClient from "./ScanProduitClient";
 
 export const dynamic = "force-dynamic";
@@ -14,13 +15,15 @@ export const dynamic = "force-dynamic";
  */
 export default async function ScanProduitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await lireSession();
 
-  const [produit, magasins] = await Promise.all([
+  const [produit, magasins, moi] = await Promise.all([
     prisma.produit.findUnique({
       where: { id },
       include: { stocks: { include: { magasin: true } } },
     }),
     prisma.magasin.findMany({ orderBy: { nom: "asc" } }),
+    session ? prisma.utilisateur.findUnique({ where: { id: session.id }, select: { magasinId: true } }) : null,
   ]);
 
   if (!produit) {
@@ -32,7 +35,7 @@ export default async function ScanProduitPage({ params }: { params: Promise<{ id
       <Link href={`/produits/${id}`} className="text-sm text-neutral-500 hover:underline">
         ← Fiche produit complète
       </Link>
-      <ScanProduitClient produit={produit} magasins={magasins} />
+      <ScanProduitClient produit={produit} magasins={magasins} magasinParDefautId={moi?.magasinId ?? ""} />
     </main>
   );
 }

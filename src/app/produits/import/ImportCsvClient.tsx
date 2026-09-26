@@ -9,9 +9,15 @@ type ResultatImport = {
   erreurs: { ligne: number; reference: string; erreur?: string }[];
 };
 
-export default function ImportCsvClient({ magasins }: { magasins: Magasin[] }) {
+export default function ImportCsvClient({
+  magasins,
+  magasinParDefautId = "",
+}: {
+  magasins: Magasin[];
+  magasinParDefautId?: string;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [magasinId, setMagasinId] = useState(magasins[0]?.id ?? "");
+  const [magasinId, setMagasinId] = useState(magasinParDefautId || magasins[0]?.id || "");
   const [envoi, setEnvoi] = useState(false);
   const [resultat, setResultat] = useState<ResultatImport | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
