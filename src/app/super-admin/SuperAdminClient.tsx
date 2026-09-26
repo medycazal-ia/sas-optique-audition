@@ -77,11 +77,6 @@ export default function SuperAdminClient({
               </>
             )}
           </p>
-          <p className="mt-3">
-            <Link href="/super-admin/modeles-documents" className="text-xs text-amber-400 underline hover:text-amber-300">
-              📄 Modèles de documents (Facture, Devis, Accord tiers payant)
-            </Link>
-          </p>
         </div>
       </div>
 
@@ -102,12 +97,20 @@ export default function SuperAdminClient({
       )}
 
       <div className="mx-auto mt-10 w-full max-w-3xl px-6">
-        <button
-          onClick={() => setCreation((v) => !v)}
-          className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-3 text-sm font-bold text-neutral-950 shadow-[0_0_25px_rgba(217,164,65,0.35)] transition hover:scale-105"
-        >
-          {creation ? "Annuler" : "+ Nouveau compte"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setCreation((v) => !v)}
+            className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-3 text-sm font-bold text-neutral-950 shadow-[0_0_25px_rgba(217,164,65,0.35)] transition hover:scale-105"
+          >
+            {creation ? "Annuler" : "+ Nouveau compte"}
+          </button>
+          <Link
+            href="/super-admin/modeles-documents"
+            className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-3 text-sm font-bold text-neutral-950 shadow-[0_0_25px_rgba(217,164,65,0.35)] transition hover:scale-105"
+          >
+            📄 Modèles de documents
+          </Link>
+        </div>
 
         {creation && (
           <div className="mt-4 rounded-2xl border border-amber-500/20 bg-neutral-900 p-1">
