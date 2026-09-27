@@ -200,13 +200,13 @@ export default function AssistantVocal() {
           annulerAction();
           return;
         }
-        // Ni confirmation ni annulation reconnue dans ce qui a été dit — on
-        // laisse la confirmation affichée (l'utilisateur peut réessayer ou
-        // cliquer les boutons) plutôt que de l'interpréter comme une
-        // nouvelle commande sans rapport.
-        setEtat("inactif");
-        parler("Dites confirme ou annule.", () => demarrer());
-        return;
+        // Ni confirmation ni annulation reconnue dans ce qui a été dit : on
+        // ne bloque plus les commandes suivantes sur une confirmation restée
+        // sans réponse (bug constaté : "ouvre le dossier de X" après une
+        // confirmation ignorée était pris pour une non-réponse et ré-affiché
+        // "dites confirme ou annule" au lieu d'être traité). On traite donc
+        // ce qui a été dit comme une commande normale — envoyerCommande
+        // efface elle-même la confirmation en attente au passage.
       }
       envoyerCommande(texte);
     };
