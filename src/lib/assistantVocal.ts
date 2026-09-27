@@ -453,7 +453,10 @@ async function ouvrirDocument(patientBrut: string, typeDocument: string): Promis
     if (!derniereProposition) {
       return { type: "message", texte: `${nomComplet} n'a aucun devis.` };
     }
-    return { type: "navigation", url: `/propositions/${derniereProposition.id}`, libelle: `devis de ${nomComplet}` };
+    // Libellé volontairement générique, sans nom ni prénom : dit à voix
+    // haute et affiché dans un magasin, à portée d'oreille/de vue d'autres
+    // clients — voir le même choix dans components/AssistantVocal.tsx.
+    return { type: "navigation", url: `/propositions/${derniereProposition.id}`, libelle: "devis actif" };
   }
 
   // Facture, ordonnance, ou document quelconque : pas de page dédiée, tout
@@ -461,7 +464,7 @@ async function ouvrirDocument(patientBrut: string, typeDocument: string): Promis
   return {
     type: "navigation",
     url: `/dossiers/${personne.id}`,
-    libelle: `dossier de ${nomComplet} — ${libelle}s`,
+    libelle: `dossier ouvert — ${libelle}s`,
   };
 }
 
