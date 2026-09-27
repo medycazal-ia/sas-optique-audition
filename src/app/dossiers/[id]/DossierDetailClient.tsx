@@ -3818,11 +3818,27 @@ function ConsentementsRgpd({ personne, documents }: { personne: PersonneAvecRela
   }
 
   async function validerInformation() {
-    await fetch(`/api/dossiers/${personne.id}/consentements`, {
-      method: "PATCH",
+    // Génère désormais le document RGPD complet (texte + preuve de
+    // signature à l'écran), au lieu de se contenter d'horodater "informé"
+    // sans aucun document réel — voir consentements/signer/route.ts.
+    await fetch(`/api/dossiers/${personne.id}/consentements/signer`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ informe: true }),
+      body: JSON.stringify({ methode: "ecran" }),
     });
+    fermerEtRafraichir();
+  }
+
+  /**
+   * Signature au stylet/à l'écran tactile : jusqu'ici le tracé brut (PNG) était
+   * téléversé tel quel comme document — désormais il est intégré au document
+   * RGPD complet (texte + image de la signature), généré côté serveur.
+   */
+  async function signerAuStylet(fichier: File) {
+    const formulaire = new FormData();
+    formulaire.append("methode", "pad");
+    formulaire.append("signature", fichier);
+    await fetch(`/api/dossiers/${personne.id}/consentements/signer`, { method: "POST", body: formulaire });
     fermerEtRafraichir();
   }
 
@@ -3945,7 +3961,7 @@ function ConsentementsRgpd({ personne, documents }: { personne: PersonneAvecRela
           onFermer={() => setPopupOuverte(false)}
           onValider={validerInformation}
           onCodeSmsValide={fermerEtRafraichir}
-          onSignerFichier={televerserDocumentSigne}
+          onSignerStylet={signerAuStylet}
         />
       )}
     </Carte>
@@ -3962,7 +3978,11 @@ function ConsentementsRgpd({ personne, documents }: { personne: PersonneAvecRela
  * sollicitation commerciale (email/SMS/téléphone). Quatre façons de traiter
  * cette étape : valider directement sur cet écran, signer au stylet/à
  * l'écran tactile, signer par code SMS, ou imprimer le formulaire pour une
- * signature papier (à scanner et conserver ensuite).
+ * signature papier (à scanner et conserver ensuite) — les trois premières
+ * génèrent désormais le document RGPD complet (texte + preuve de signature,
+ * voir lib/consentementPdf.ts) et cochent les trois canaux de sollicitation ;
+ * la quatrième (papier) conserve le détail canal par canal coché à la main
+ * par le client sur le formulaire imprimé.
  */
 function PopupRgpd({
   personneId,
@@ -3970,14 +3990,14 @@ function PopupRgpd({
   onFermer,
   onValider,
   onCodeSmsValide,
-  onSignerFichier,
+  onSignerStylet,
 }: {
   personneId: string;
   telephone: string | null;
   onFermer: () => void;
   onValider: () => void;
   onCodeSmsValide: () => void;
-  onSignerFichier: (fichier: File) => void;
+  onSignerStylet: (fichier: File) => void;
 }) {
   const [padOuvert, setPadOuvert] = useState(false);
   const [smsOuvert, setSmsOuvert] = useState(false);
@@ -4117,7 +4137,7 @@ function PopupRgpd({
           onFermer={() => setPadOuvert(false)}
           onSigner={(fichier) => {
             setPadOuvert(false);
-            onSignerFichier(fichier);
+            onSignerStylet(fichier);
           }}
         />
       )}
