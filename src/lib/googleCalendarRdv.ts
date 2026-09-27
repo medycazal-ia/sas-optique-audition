@@ -21,6 +21,25 @@ const GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 const SCOPE_CALENDAR = "https://www.googleapis.com/auth/calendar";
 
+/**
+ * URL publique fixe du site — un URI de redirection OAuth2 doit correspondre
+ * EXACTEMENT (caractère par caractère) à celui enregistré dans Google Cloud
+ * Console, donc jamais le recalculer depuis la requête entrante
+ * (request.nextUrl.origin) : Render (comme la plupart des hébergeurs)
+ * termine le HTTPS en amont et transmet la requête en interne, et selon la
+ * façon dont les en-têtes X-Forwarded-* sont interprétés, l'origine déduite
+ * peut différer (schéma, casse...) de l'URL réellement publique — d'où le
+ * "redirect_uri_mismatch" Google observé en pratique. SITE_URL permet de
+ * migrer vers facilog.site sans toucher au code, une fois ce domaine
+ * personnalisé branché sur Render.
+ */
+const SITE_URL = process.env.SITE_URL ?? "https://sas-optique-audition.onrender.com";
+
+/** URI de redirection OAuth2 — doit être copié à l'identique dans Google Cloud Console (Identifiants > URI de redirection autorisés). */
+export function redirectUriGoogleCalendar(): string {
+  return `${SITE_URL}/api/super-admin/rdv-demo/callback`;
+}
+
 // Fuseau fixe de l'activité (pas encore configurable par écran) — toutes les
 // heures d'ouverture de ConfigurationRdv (heureDebut/heureFin) s'entendent
 // dans ce fuseau, jamais en UTC serveur.

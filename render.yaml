@@ -108,6 +108,16 @@ services:
         sync: false
       - key: TWILIO_FROM
         sync: false
+      # URL publique fixe du site — sert notamment à construire l'URI de
+      # redirection OAuth2 Google Calendar (voir plus bas) : cette URI doit
+      # correspondre EXACTEMENT à celle enregistrée dans Google Cloud
+      # Console, donc jamais recalculée depuis la requête entrante (Render
+      # termine le HTTPS en amont, ce qui peut fausser le schéma déduit —
+      # source du "redirect_uri_mismatch" observé en pratique). À changer
+      # ici (et dans Google Cloud Console) le jour où facilog.site est
+      # branché comme domaine personnalisé sur ce service.
+      - key: SITE_URL
+        value: https://sas-optique-audition.onrender.com
       # Page publique /rdv-demo (bouton "RDV DEMO"/QR code de la page
       # d'accueil) — prise de rendez-vous "maison" au-dessus de l'API Google
       # Calendar (voir lib/googleCalendarRdv.ts ; Google ne permet de créer
