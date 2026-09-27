@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { SITE_URL } from "@/lib/siteUrl";
 
 /**
  * Réservation "maison" pour /rdv-demo : Google ne permet de créer un agenda
@@ -21,21 +22,7 @@ const GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 const SCOPE_CALENDAR = "https://www.googleapis.com/auth/calendar";
 
-/**
- * URL publique fixe du site — un URI de redirection OAuth2 doit correspondre
- * EXACTEMENT (caractère par caractère) à celui enregistré dans Google Cloud
- * Console, donc jamais le recalculer depuis la requête entrante
- * (request.nextUrl.origin) : Render (comme la plupart des hébergeurs)
- * termine le HTTPS en amont et transmet la requête en interne, et selon la
- * façon dont les en-têtes X-Forwarded-* sont interprétés, l'origine déduite
- * peut différer (schéma, casse...) de l'URL réellement publique — d'où le
- * "redirect_uri_mismatch" Google observé en pratique. SITE_URL permet de
- * migrer vers facilog.site sans toucher au code, une fois ce domaine
- * personnalisé branché sur Render.
- */
-const SITE_URL = process.env.SITE_URL ?? "https://sas-optique-audition.onrender.com";
-
-/** URI de redirection OAuth2 — doit être copié à l'identique dans Google Cloud Console (Identifiants > URI de redirection autorisés). */
+/** URI de redirection OAuth2 — doit être copié à l'identique dans Google Cloud Console (Identifiants > URI de redirection autorisés). Voir lib/siteUrl.ts pour pourquoi SITE_URL et jamais request.nextUrl.origin. */
 export function redirectUriGoogleCalendar(): string {
   return `${SITE_URL}/api/super-admin/rdv-demo/callback`;
 }
