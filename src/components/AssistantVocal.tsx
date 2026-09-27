@@ -2,57 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-
-/**
- * Reconnaissance vocale du navigateur (Web Speech API) — types minimaux
- * déclarés ici plutôt que d'ajouter une dépendance : l'API n'est pas dans
- * le lib.dom.d.ts standard de TypeScript, et les préfixes navigateur
- * varient (Chrome expose webkitSpeechRecognition).
- */
-interface EvenementResultatVocal {
-  results: { [index: number]: { [index: number]: { transcript: string } } };
-}
-
-interface ReconnaissanceVocale {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((evenement: EvenementResultatVocal) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: new () => ReconnaissanceVocale;
-    webkitSpeechRecognition?: new () => ReconnaissanceVocale;
-  }
-}
-
-function constructeurReconnaissanceVocale(): (new () => ReconnaissanceVocale) | undefined {
-  if (typeof window === "undefined") return undefined;
-  return window.SpeechRecognition ?? window.webkitSpeechRecognition;
-}
-
-/**
- * Fait parler le navigateur (Web Speech API — synthèse, gratuite, aucun
- * appel serveur) : pour que l'assistant pose lui-même une question
- * ("Confirmer ?") plutôt que de se contenter d'afficher du texte. `onFin`
- * sert à enchaîner une nouvelle écoute juste après (dialogue question →
- * réponse), jamais appelé si la synthèse vocale n'est pas disponible.
- */
-function parler(texte: string, onFin?: () => void) {
-  if (typeof window === "undefined" || !window.speechSynthesis) {
-    onFin?.();
-    return;
-  }
-  window.speechSynthesis.cancel();
-  const enonce = new SpeechSynthesisUtterance(texte);
-  enonce.lang = "fr-FR";
-  if (onFin) enonce.onend = () => onFin();
-  window.speechSynthesis.speak(enonce);
-}
+import { constructeurReconnaissanceVocale, type ReconnaissanceVocale } from "@/lib/reconnaissanceVocale";
+import { parler } from "@/lib/syntheseVocale";
 
 type EtatEcoute = "inactif" | "ecoute" | "traitement";
 

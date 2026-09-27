@@ -26,6 +26,22 @@ import { garantieExpiree } from "@/lib/sav";
 import { useModeDemo } from "@/lib/modeDemo";
 import { transposerCylindrePositif, valeursActives, type MesureOeil } from "@/lib/optique";
 import type { AnalyseBeneficiaire } from "@/lib/beneficiaires";
+import {
+  VISIONS_BESOIN,
+  TRAITEMENTS_VERRE_BESOIN,
+  MATIERES_MONTURE_BESOIN,
+  STYLES_BESOIN,
+  LIBELLES_VISION_BESOIN,
+  LIBELLES_TRAITEMENT_VERRE_BESOIN,
+  LIBELLES_MATIERE_MONTURE_BESOIN,
+  LIBELLES_STYLE_BESOIN,
+  type VisionBesoin,
+  type TraitementVerreBesoin,
+  type MatiereMontureBesoin,
+  type StyleBesoin,
+} from "@/lib/besoinsExprimes";
+import { type ReconnaissanceVocale } from "@/lib/reconnaissanceVocale";
+import { parler } from "@/lib/syntheseVocale";
 import Carrousel from "@/components/Carrousel";
 import CaptureCamera from "@/components/CaptureCamera";
 import PadSignature from "@/components/PadSignature";
@@ -4144,14 +4160,177 @@ function ConsentementLigne({
   );
 }
 
+function egaliteEnsemble(a: string[], b: string[]): boolean {
+  return a.length === b.length && [...a].sort().join(",") === [...b].sort().join(",");
+}
+
+/**
+ * Questions posées à voix haute par l'assistant (voir lancerQuestionnaire)
+ * pour cerner, une par une et avec des formulations naturelles plutôt
+ * qu'un interrogatoire technique, les critères de la taxonomie des besoins
+ * (voir lib/besoinsExprimes.ts) — surtout côté verres, comme demandé :
+ * vision de loin/de près/progressif, antireflet, anti-lumière bleue,
+ * photochromique, polarisant, dégradé. La matière/le style de monture
+ * restent couverts par l'extraction libre (conversation ouverte ou saisie
+ * manuelle), pas par ce questionnaire dédié verres.
+ */
+const QUESTIONS_AUDIT: string[] = [
+  "Est-ce que vous avez plutôt du mal à voir de loin, à voir de près, ou un peu des deux ?",
+  "Vous passez beaucoup de temps sur les écrans, ordinateur ou téléphone ?",
+  "Le soleil ou les phares la nuit vous gênent-ils facilement ?",
+  "Aimeriez-vous que vos verres se teintent automatiquement au soleil ?",
+  "Vous conduisez souvent ? Est-ce que les reflets sur la route ou l'eau vous gênent ?",
+  "Petite question esthétique pour finir : un léger dégradé de couleur sur les verres, ça vous tente, ou vous préférez un verre uniforme ?",
+];
+
+/** Écoute une seule réponse (pas de mode continu) — utilisé question par question dans le questionnaire guidé. */
+function ecouterUneReponse(): Promise<string> {
+  return new Promise((resolve) => {
+    const Ctor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Ctor) {
+      resolve("");
+      return;
+    }
+    const reconnaissance = new Ctor();
+    reconnaissance.lang = "fr-FR";
+    reconnaissance.continuous = false;
+    reconnaissance.interimResults = false;
+    reconnaissance.onresult = (evenement) => resolve(evenement.results[0]?.[0]?.transcript ?? "");
+    reconnaissance.onerror = () => resolve("");
+    try {
+      reconnaissance.start();
+    } catch {
+      resolve("");
+    }
+  });
+}
+
+function parlerPromesse(texte: string): Promise<void> {
+  return new Promise((resolve) => parler(texte, resolve));
+}
+
 function SyntheseBesoin({ personne }: { personne: Personne }) {
   const router = useRouter();
+  const [modalOuverte, setModalOuverte] = useState(false);
   const [texte, setTexte] = useState(personne.syntheseBesoin ?? "");
-  const [envoi, setEnvoi] = useState<"brouillon" | "validation" | null>(null);
+  const [transcription, setTranscription] = useState(personne.transcriptionBesoin ?? "");
+  const [vision, setVision] = useState<VisionBesoin | null>((personne.visionBesoin as VisionBesoin | null) ?? null);
+  const [traitements, setTraitements] = useState<TraitementVerreBesoin[]>((personne.traitementsVerreBesoin as TraitementVerreBesoin[]) ?? []);
+  const [matiere, setMatiere] = useState<MatiereMontureBesoin | null>((personne.matiereMontureBesoin as MatiereMontureBesoin | null) ?? null);
+  const [style, setStyle] = useState<StyleBesoin[]>((personne.styleBesoin as StyleBesoin[]) ?? []);
+  const [enregistrement, setEnregistrement] = useState(false);
+  const [questionnaireActif, setQuestionnaireActif] = useState(false);
+  const [envoi, setEnvoi] = useState<"brouillon" | "validation" | "extraction" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [documentPopup, setDocumentPopup] = useState<string | null>(null);
+  const reconnaissanceRef = useRef<ReconnaissanceVocale | null>(null);
+  const enregistrementActifRef = useRef(false);
 
-  const modifieDepuisValidation = texte !== (personne.syntheseBesoin ?? "");
+  const modifieDepuisValidation =
+    texte !== (personne.syntheseBesoin ?? "") ||
+    vision !== ((personne.visionBesoin as VisionBesoin | null) ?? null) ||
+    matiere !== ((personne.matiereMontureBesoin as MatiereMontureBesoin | null) ?? null) ||
+    !egaliteEnsemble(traitements, (personne.traitementsVerreBesoin as string[]) ?? []) ||
+    !egaliteEnsemble(style, (personne.styleBesoin as string[]) ?? []);
   const estValidee = Boolean(personne.syntheseBesoinValideeA) && !modifieDepuisValidation;
+
+  function demarrerEnregistrement() {
+    const Ctor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Ctor) {
+      setMessage("Reconnaissance vocale non supportée par ce navigateur.");
+      return;
+    }
+    const reconnaissance = new Ctor();
+    reconnaissance.lang = "fr-FR";
+    reconnaissance.continuous = true;
+    reconnaissance.interimResults = false;
+    reconnaissance.onresult = (evenement) => {
+      const complet = Array.from({ length: (evenement.results as unknown as { length: number }).length }, (_, i) => evenement.results[i]?.[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+      setTranscription(complet);
+    };
+    reconnaissance.onend = () => {
+      // Certains navigateurs coupent après un silence même en continu — on
+      // relance tant que l'utilisateur n'a pas cliqué "Arrêter" lui-même.
+      if (enregistrementActifRef.current) {
+        try {
+          reconnaissance.start();
+        } catch {
+          // déjà démarrée — ignore.
+        }
+      }
+    };
+    reconnaissance.onerror = () => {
+      enregistrementActifRef.current = false;
+      setEnregistrement(false);
+    };
+    reconnaissanceRef.current = reconnaissance;
+    enregistrementActifRef.current = true;
+    setEnregistrement(true);
+    setMessage(null);
+    reconnaissance.start();
+  }
+
+  function arreterEnregistrement() {
+    enregistrementActifRef.current = false;
+    reconnaissanceRef.current?.stop();
+    setEnregistrement(false);
+  }
+
+  async function extraireBesoins(texteAAnalyser?: string) {
+    const source = texteAAnalyser ?? transcription;
+    if (!source.trim()) {
+      setMessage("Aucune transcription à analyser — enregistrez d'abord la conversation.");
+      return;
+    }
+    setEnvoi("extraction");
+    setMessage(null);
+    try {
+      const reponse = await fetch(`/api/dossiers/${personne.id}/synthese/extraire`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcription: source }),
+      });
+      const data = await reponse.json();
+      if (!reponse.ok) {
+        setMessage(data.erreur ?? "Erreur lors de l'extraction.");
+        return;
+      }
+      setTexte(data.syntheseBesoin ?? "");
+      setVision(data.visionBesoin ?? null);
+      setTraitements(data.traitementsVerreBesoin ?? []);
+      setMatiere(data.matiereMontureBesoin ?? null);
+      setStyle(data.styleBesoin ?? []);
+      setMessage("Besoins extraits — relisez et corrigez avant d'enregistrer.");
+    } catch {
+      setMessage("Erreur réseau lors de l'extraction.");
+    } finally {
+      setEnvoi(null);
+    }
+  }
+
+  /**
+   * Questionnaire guidé : l'assistant pose lui-même les questions (synthèse
+   * vocale) et écoute chaque réponse tour à tour, avec un ton conversationnel
+   * plutôt qu'une liste de cases à cocher — puis lance automatiquement
+   * l'extraction sur l'ensemble question/réponse accumulé.
+   */
+  async function lancerQuestionnaire() {
+    setQuestionnaireActif(true);
+    setMessage(null);
+    let historique = "";
+    await parlerPromesse("Je vais vous poser quelques questions rapides pour bien cerner vos besoins.");
+    for (const question of QUESTIONS_AUDIT) {
+      await parlerPromesse(question);
+      const reponse = await ecouterUneReponse();
+      historique += `Question : ${question}\nRéponse : ${reponse || "(pas de réponse captée)"}\n\n`;
+      setTranscription((precedent) => (precedent ? `${precedent}\n\n` : "") + `Question : ${question}\nRéponse : ${reponse}`);
+    }
+    await parlerPromesse("Merci, j'ai bien noté vos réponses.");
+    setQuestionnaireActif(false);
+    await extraireBesoins((transcription ? `${transcription}\n\n` : "") + historique.trim());
+  }
 
   async function enregistrerBrouillon() {
     setEnvoi("brouillon");
@@ -4159,7 +4338,14 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
     await fetch(`/api/dossiers/${personne.id}/synthese`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ syntheseBesoin: texte }),
+      body: JSON.stringify({
+        syntheseBesoin: texte,
+        transcriptionBesoin: transcription,
+        visionBesoin: vision,
+        traitementsVerreBesoin: traitements,
+        matiereMontureBesoin: matiere,
+        styleBesoin: style,
+      }),
     });
     setEnvoi(null);
     setMessage("Brouillon enregistré — validation humaine requise avant d'être acté.");
@@ -4182,6 +4368,30 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
     }
   }
 
+  /**
+   * Ouvre le document de recommandations (synthèse + produits suggérés,
+   * voir app/dossiers/[id]/audit-resultats/page.tsx) dans sa propre popup —
+   * il pourra ensuite servir à composer le devis (bouton "Ajouter au
+   * devis" sur chaque produit suggéré, directement dans ce document).
+   * Enregistre d'abord le brouillon pour que le document reflète l'état
+   * actuel des besoins (pas seulement la dernière version enregistrée).
+   */
+  async function ouvrirDocumentSolutions() {
+    await enregistrerBrouillon();
+    setDocumentPopup(`/dossiers/${personne.id}/audit-resultats`);
+  }
+
+  function bascule<T extends string>(liste: T[], valeur: T, setter: (v: T[]) => void) {
+    setter(liste.includes(valeur) ? liste.filter((v) => v !== valeur) : [...liste, valeur]);
+  }
+
+  const chipsBesoins = [
+    ...(vision ? [LIBELLES_VISION_BESOIN[vision]] : []),
+    ...traitements.map((t) => LIBELLES_TRAITEMENT_VERRE_BESOIN[t]),
+    ...(matiere ? [LIBELLES_MATIERE_MONTURE_BESOIN[matiere]] : []),
+    ...style.map((s) => LIBELLES_STYLE_BESOIN[s]),
+  ];
+
   return (
     <Carte
       id={ID_CARTE_SYNTHESE_BESOIN}
@@ -4190,19 +4400,21 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
       emoji="🎙️"
       degrade="from-fuchsia-400 to-purple-500"
     >
-      <textarea
-        value={texte}
-        onChange={(e) => setTexte(e.target.value)}
-        rows={5}
-        placeholder="Habitudes, gêne, usage, attentes, budget, urgence, contexte de vie…"
-        className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-      />
-
+      {chipsBesoins.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {chipsBesoins.map((c) => (
+            <span key={c} className="rounded-full bg-fuchsia-100 px-2 py-1 text-xs font-medium text-fuchsia-800">
+              {c}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-neutral-500">Aucun besoin exprimé enregistré pour l&apos;instant.</p>
+      )}
       <div className="mt-2 text-xs">
         {estValidee ? (
           <span className="font-medium text-emerald-600">
-            ✓ Validée le {new Date(personne.syntheseBesoinValideeA!).toLocaleString("fr-FR")} par{" "}
-            {personne.syntheseBesoinValideePar}
+            ✓ Validée le {new Date(personne.syntheseBesoinValideeA!).toLocaleString("fr-FR")} par {personne.syntheseBesoinValideePar}
           </span>
         ) : (
           <span className="text-amber-700">Non validée — ne sera pas actée dans le dossier tant que non validée.</span>
@@ -4211,22 +4423,186 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
-          onClick={enregistrerBrouillon}
-          disabled={envoi !== null}
+          onClick={() => setModalOuverte(true)}
+          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
+        >
+          🎙️ Ouvrir l&apos;audit
+        </button>
+        <button
+          onClick={ouvrirDocumentSolutions}
+          disabled={chipsBesoins.length === 0}
           className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
         >
-          {envoi === "brouillon" ? "Enregistrement…" : "Enregistrer le brouillon"}
-        </button>
-
-        <button
-          onClick={valider}
-          disabled={envoi !== null || !texte.trim()}
-          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-        >
-          {envoi === "validation" ? "Validation…" : "Valider la synthèse"}
+          📄 Voir les solutions
         </button>
       </div>
-      {message && <p className="mt-2 text-sm text-neutral-500">{message}</p>}
+
+      {modalOuverte && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setModalOuverte(false)}>
+          <div
+            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-neutral-800">Audit — {personne.prenom} {personne.nom}</span>
+              <button onClick={() => setModalOuverte(false)} className="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100" title="Fermer">
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                onClick={enregistrement ? arreterEnregistrement : demarrerEnregistrement}
+                disabled={questionnaireActif}
+                className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${
+                  enregistrement ? "animate-pulse bg-red-500 text-white" : "border border-neutral-300 hover:bg-neutral-50"
+                }`}
+              >
+                {enregistrement ? "⏹ Arrêter l'enregistrement" : "🎙️ Enregistrer la conversation"}
+              </button>
+              <button
+                onClick={lancerQuestionnaire}
+                disabled={enregistrement || questionnaireActif || envoi !== null}
+                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {questionnaireActif ? "🗣️ Questionnaire en cours…" : "🗣️ Questionnaire guidé"}
+              </button>
+              <button
+                onClick={() => extraireBesoins()}
+                disabled={envoi !== null || !transcription.trim() || questionnaireActif}
+                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {envoi === "extraction" ? "Extraction…" : "Extraire les besoins"}
+              </button>
+            </div>
+            <textarea
+              value={transcription}
+              onChange={(e) => setTranscription(e.target.value)}
+              rows={3}
+              placeholder="Transcription brute de la conversation (dictée au micro ci-dessus, ou collée/corrigée à la main)…"
+              className="mt-2 w-full rounded-md border border-neutral-300 px-3 py-2 text-xs text-neutral-500"
+            />
+
+            <textarea
+              value={texte}
+              onChange={(e) => setTexte(e.target.value)}
+              rows={4}
+              placeholder="Habitudes, gêne, usage, attentes, budget, urgence, contexte de vie…"
+              className="mt-2 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            />
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold text-neutral-600">Vision</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {VISIONS_BESOIN.map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setVision(vision === v ? null : v)}
+                      className={`rounded-full px-2 py-1 text-xs ${
+                        vision === v ? "bg-fuchsia-600 text-white" : "border border-neutral-300 text-neutral-700 hover:bg-neutral-50"
+                      }`}
+                    >
+                      {LIBELLES_VISION_BESOIN[v]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-neutral-600">Matière de monture</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {MATIERES_MONTURE_BESOIN.map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMatiere(matiere === m ? null : m)}
+                      className={`rounded-full px-2 py-1 text-xs ${
+                        matiere === m ? "bg-fuchsia-600 text-white" : "border border-neutral-300 text-neutral-700 hover:bg-neutral-50"
+                      }`}
+                    >
+                      {LIBELLES_MATIERE_MONTURE_BESOIN[m]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs font-semibold text-neutral-600">Traitements de verre</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {TRAITEMENTS_VERRE_BESOIN.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => bascule(traitements, t, setTraitements)}
+                      className={`rounded-full px-2 py-1 text-xs ${
+                        traitements.includes(t) ? "bg-fuchsia-600 text-white" : "border border-neutral-300 text-neutral-700 hover:bg-neutral-50"
+                      }`}
+                    >
+                      {LIBELLES_TRAITEMENT_VERRE_BESOIN[t]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs font-semibold text-neutral-600">Style de monture</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {STYLES_BESOIN.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => bascule(style, s, setStyle)}
+                      className={`rounded-full px-2 py-1 text-xs ${
+                        style.includes(s) ? "bg-fuchsia-600 text-white" : "border border-neutral-300 text-neutral-700 hover:bg-neutral-50"
+                      }`}
+                    >
+                      {LIBELLES_STYLE_BESOIN[s]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                onClick={enregistrerBrouillon}
+                disabled={envoi !== null}
+                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {envoi === "brouillon" ? "Enregistrement…" : "Enregistrer le brouillon"}
+              </button>
+
+              <button
+                onClick={valider}
+                disabled={envoi !== null || !texte.trim()}
+                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+              >
+                {envoi === "validation" ? "Validation…" : "Valider la synthèse"}
+              </button>
+
+              <button
+                onClick={ouvrirDocumentSolutions}
+                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50"
+              >
+                📄 Voir les solutions
+              </button>
+            </div>
+            {message && <p className="mt-2 text-sm text-neutral-500">{message}</p>}
+          </div>
+        </div>
+      )}
+
+      {documentPopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setDocumentPopup(null)}>
+          <div
+            className="flex h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2">
+              <span className="text-sm font-semibold text-neutral-800">Solutions proposées</span>
+              <button onClick={() => setDocumentPopup(null)} className="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100" title="Fermer">
+                ✕
+              </button>
+            </div>
+            <iframe src={documentPopup} title="Solutions proposées" className="flex-1 border-0" />
+          </div>
+        </div>
+      )}
     </Carte>
   );
 }
