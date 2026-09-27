@@ -123,15 +123,34 @@ function estActionConfirmable(action: string): action is ActionConfirmable {
   return (ACTIONS_CONFIRMABLES as readonly string[]).includes(action);
 }
 
+/**
+ * Variantes phonétiques d'un mot pour compenser les erreurs de transcription
+ * vocale — constaté en conditions réelles : la reconnaissance vocale du
+ * navigateur confond régulièrement "s" et "z" en français ("Cazal" transcrit
+ * "Casal"), ce qui fait échouer toute recherche par préfixe/contenu exacte
+ * même quand le nom est correctement prononcé. On recherche donc aussi le
+ * mot avec ses "s"/"z" permutés, en plus de l'original.
+ */
+function variantesPhonetiques(mot: string): string[] {
+  const variantes = new Set([mot]);
+  variantes.add(mot.replace(/z/gi, "s"));
+  variantes.add(mot.replace(/s/gi, "z"));
+  return [...variantes];
+}
+
 async function rechercherPersonnes(requeteBrute: string): Promise<{ id: string; nom: string; prenom: string | null }[]> {
   const requete = requeteBrute.trim();
   if (!requete) return [];
 
+  const variantesRequete = variantesPhonetiques(requete);
+
   const parPrefixe = await prisma.personne.findMany({
     where: {
       OR: [
-        { nom: { startsWith: requete, mode: "insensitive" } },
-        { prenom: { startsWith: requete, mode: "insensitive" } },
+        ...variantesRequete.flatMap((v) => [
+          { nom: { startsWith: v, mode: "insensitive" as const } },
+          { prenom: { startsWith: v, mode: "insensitive" as const } },
+        ]),
         { numeroSecuriteSociale: { startsWith: requete } },
       ],
     },
@@ -149,7 +168,10 @@ async function rechercherPersonnes(requeteBrute: string): Promise<{ id: string; 
     const parMots = await prisma.personne.findMany({
       where: {
         AND: mots.map((mot) => ({
-          OR: [{ nom: { contains: mot, mode: "insensitive" } }, { prenom: { contains: mot, mode: "insensitive" } }],
+          OR: variantesPhonetiques(mot).flatMap((v) => [
+            { nom: { contains: v, mode: "insensitive" as const } },
+            { prenom: { contains: v, mode: "insensitive" as const } },
+          ]),
         })),
       },
       orderBy: { nom: "asc" },
