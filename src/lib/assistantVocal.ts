@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { creerClientAnthropic } from "@/lib/anthropicClient";
 import { declencherRechercheAccordMutuelle } from "@/lib/rechercheAccordMutuelle";
 import { repasserDemandeEnAttente } from "@/lib/repasserEnAttente";
+import { journaliser } from "@/lib/evenements";
 
 /**
  * Assistant vocal — pas de grammaire de commandes figée façon "Hey Google" :
@@ -107,11 +108,56 @@ const OUTILS: Anthropic.Tool[] = [
       required: ["patient"],
     },
   },
+  {
+    name: "ouvrir_document",
+    description:
+      "Ouvre un devis, une facture, une ordonnance ou tout autre document (le plus récent) d'un patient (ex: \"ouvre le devis de Malika Cazal\", \"ouvre la dernière facture de Dupont\", \"montre-moi l'ordonnance de Medy\").",
+    input_schema: {
+      type: "object",
+      properties: {
+        patient: { type: "string", description: "Nom et/ou prénom du patient, transmis en entier." },
+        typeDocument: {
+          type: "string",
+          enum: ["devis", "facture", "ordonnance", "document"],
+          description:
+            "devis = proposition/devis ; facture = facture de vente ; ordonnance = ordonnance optique/auditive ; document = tout autre document (carte mutuelle, justificatif...).",
+        },
+      },
+      required: ["patient", "typeDocument"],
+    },
+  },
+  {
+    name: "creer_dossier",
+    description:
+      "Ouvre le formulaire de création d'un nouveau dossier patient, avec le prénom et le nom déjà pré-remplis (ex: \"crée un dossier pour Malika Cazal\", \"nouveau dossier au nom de Dupont\"). Ne crée rien tout seul : le formulaire reste à valider par l'utilisateur (téléphone ou email obligatoire, à saisir à la main).",
+    input_schema: {
+      type: "object",
+      properties: {
+        prenom: { type: "string", description: "Prénom du nouveau patient." },
+        nom: { type: "string", description: "Nom du nouveau patient." },
+      },
+      required: ["nom"],
+    },
+  },
+  {
+    name: "modifier_contact_dossier",
+    description:
+      "Modifie le téléphone, l'email ou l'adresse d'un patient (ex: \"change le téléphone de Malika Cazal en 06...\", \"modifie l'email de Dupont\"). Modifie une donnée — nécessite une confirmation avant d'être réellement appliqué. Pour tout le reste (montant d'une facture, statut d'un dossier...), ce n'est pas cet outil — ne pas l'utiliser.",
+    input_schema: {
+      type: "object",
+      properties: {
+        patient: { type: "string", description: "Nom et/ou prénom du patient concerné." },
+        champ: { type: "string", enum: ["telephone", "email", "adresse"], description: "Le champ à modifier." },
+        valeur: { type: "string", description: "La nouvelle valeur, telle que dite." },
+      },
+      required: ["patient", "champ", "valeur"],
+    },
+  },
 ];
 
 const PROMPT_SYSTEME = `Tu es l'assistant vocal du logiciel de gestion d'un magasin d'optique/audition (SAS Optique & Audition). On te donne le texte transcrit d'une phrase que l'utilisateur a dite au micro, en français — parfois imparfaitement reconnu.
 
-Choisis l'outil le plus approprié à sa demande et appelle-le avec les bons arguments. Si sa demande ne correspond à aucune action disponible pour l'instant (créer un devis, valider un accord, enregistrer un paiement, créer un nouveau dossier, etc. — pas encore supporté à la voix), réponds par une phrase courte expliquant que cette action n'est pas encore possible à la voix, sans appeler d'outil.`;
+Choisis l'outil le plus approprié à sa demande et appelle-le avec les bons arguments. Si sa demande ne correspond à aucune action disponible pour l'instant (valider un accord, enregistrer un paiement, modifier le montant d'une facture, "fermer" un dossier — un dossier client n'a volontairement pas de statut ouvert/fermé dans ce logiciel, etc. — pas encore supporté à la voix), réponds par une phrase courte expliquant que cette action n'est pas encore possible à la voix, sans appeler d'outil.`;
 
 export type ResultatAssistantVocal =
   | { type: "navigation"; url: string; libelle: string }
@@ -120,8 +166,15 @@ export type ResultatAssistantVocal =
   | { type: "message"; texte: string };
 
 /** Les seules actions qui modifient des données — jamais exécutées directement par interpreterCommandeVocale, uniquement via executerActionConfirmee après un accord explicite de l'utilisateur. */
-const ACTIONS_CONFIRMABLES = ["repasser_en_attente"] as const;
+const ACTIONS_CONFIRMABLES = ["repasser_en_attente", "modifier_contact_dossier"] as const;
 type ActionConfirmable = (typeof ACTIONS_CONFIRMABLES)[number];
+
+const CHAMPS_CONTACT_MODIFIABLES = ["telephone", "email", "adresse"] as const;
+type ChampContactModifiable = (typeof CHAMPS_CONTACT_MODIFIABLES)[number];
+
+function estChampContactModifiable(champ: string): champ is ChampContactModifiable {
+  return (CHAMPS_CONTACT_MODIFIABLES as readonly string[]).includes(champ);
+}
 
 function estActionConfirmable(action: string): action is ActionConfirmable {
   return (ACTIONS_CONFIRMABLES as readonly string[]).includes(action);
@@ -350,6 +403,99 @@ async function demanderConfirmationRepasserEnAttente(patientBrut: string): Promi
   };
 }
 
+const LIBELLES_TYPE_DOCUMENT: Record<string, string> = {
+  devis: "devis",
+  facture: "facture",
+  ordonnance: "ordonnance",
+  document: "document",
+};
+
+async function ouvrirDocument(patientBrut: string, typeDocument: string): Promise<ResultatAssistantVocal> {
+  const personnes = await rechercherPersonnes(patientBrut);
+  if (personnes.length === 0) {
+    return { type: "message", texte: `Aucun patient trouvé pour « ${patientBrut} ».` };
+  }
+  if (personnes.length > 1) {
+    return { type: "resultats_patients", personnes };
+  }
+  const personne = personnes[0];
+  const nomComplet = [personne.prenom, personne.nom].filter(Boolean).join(" ");
+  const libelle = LIBELLES_TYPE_DOCUMENT[typeDocument] ?? "document";
+
+  if (typeDocument === "devis") {
+    const derniereProposition = await prisma.proposition.findFirst({
+      where: { personneId: personne.id },
+      orderBy: { creeA: "desc" },
+    });
+    if (!derniereProposition) {
+      return { type: "message", texte: `${nomComplet} n'a aucun devis.` };
+    }
+    return { type: "navigation", url: `/propositions/${derniereProposition.id}`, libelle: `devis de ${nomComplet}` };
+  }
+
+  // Facture, ordonnance, ou document quelconque : pas de page dédiée, tout
+  // est consultable depuis le dossier du patient (voir HistoriqueDocuments).
+  return {
+    type: "navigation",
+    url: `/dossiers/${personne.id}`,
+    libelle: `dossier de ${nomComplet} — ${libelle}s`,
+  };
+}
+
+/**
+ * Ne crée rien en base : ouvre uniquement le formulaire existant avec
+ * prénom/nom pré-remplis. Téléphone ou email est obligatoire pour créer un
+ * dossier (voir /api/dossiers) et trop peu fiable à dicter pour être rempli
+ * à la voix — l'utilisateur les saisit lui-même, le reste (le nom) est déjà
+ * fait.
+ */
+function creerDossier(prenom: string, nom: string): ResultatAssistantVocal {
+  if (!nom.trim()) {
+    return { type: "message", texte: "Je n'ai pas compris le nom du nouveau patient." };
+  }
+  const params = new URLSearchParams();
+  if (prenom.trim()) params.set("prenom", prenom.trim());
+  params.set("nom", nom.trim());
+  return {
+    type: "navigation",
+    url: `/dossiers/nouveau?${params.toString()}`,
+    libelle: `nouveau dossier pour ${[prenom, nom].filter(Boolean).join(" ")}`,
+  };
+}
+
+async function demanderConfirmationModifierContact(
+  patientBrut: string,
+  champ: string,
+  valeur: string,
+): Promise<ResultatAssistantVocal> {
+  if (!estChampContactModifiable(champ)) {
+    return { type: "message", texte: "Ce champ n'est pas modifiable à la voix." };
+  }
+  if (!valeur.trim()) {
+    return { type: "message", texte: "Je n'ai pas compris la nouvelle valeur." };
+  }
+  const personnes = await rechercherPersonnes(patientBrut);
+  if (personnes.length === 0) {
+    return { type: "message", texte: `Aucun patient trouvé pour « ${patientBrut} ».` };
+  }
+  if (personnes.length > 1) {
+    return { type: "resultats_patients", personnes };
+  }
+  const personne = personnes[0];
+  const nomComplet = [personne.prenom, personne.nom].filter(Boolean).join(" ");
+  const libellesChamp: Record<ChampContactModifiable, string> = {
+    telephone: "le téléphone",
+    email: "l'email",
+    adresse: "l'adresse",
+  };
+  return {
+    type: "confirmation",
+    description: `Modifier ${libellesChamp[champ]} de ${nomComplet} en « ${valeur.trim()} » ?`,
+    action: "modifier_contact_dossier",
+    parametres: { personneId: personne.id, champ, valeur: valeur.trim() },
+  };
+}
+
 /**
  * Reconnaît directement, sans passer par l'IA, le tournure la plus fréquente
  * ("ouvre le dossier de Malika Cazal") — constaté en production : avec de
@@ -384,7 +530,43 @@ const MOTIF_CHERCHE_PATIENT = /^(?:cherche|trouve)(?:z|-moi)?\s+(?!.*\b(?:produi
  */
 const MOTIF_DOSSIER_DIRECT = /\bdossiers?\s+(?!(?:au|du|de|des|d['’]|le|la|les|nom)\b)(.+)/i;
 
-export async function interpreterCommandeVocale(texte: string): Promise<ResultatAssistantVocal> {
+/**
+ * Reconstitue un nom épelé lettre par lettre ("cherche C A Z A L", ou avec
+ * des points "C. A. Z. A. L.") en un seul mot ("CAZAL") — la reconnaissance
+ * vocale du navigateur n'a pas de mode dictée-lettres et retranscrit chaque
+ * lettre comme un mot séparé. Ne recolle qu'à partir de 3 lettres isolées
+ * consécutives, pour ne jamais toucher aux mots français à une lettre ("y",
+ * "a") qui apparaissent normalement seuls ou par deux ("il y a").
+ */
+function reconstruireLettresEpelees(texte: string): string {
+  const mots = texte.split(/\s+/);
+  const resultat: string[] = [];
+  let i = 0;
+  while (i < mots.length) {
+    let j = i;
+    let lettres = "";
+    while (j < mots.length) {
+      const nettoye = mots[j].replace(/[.,;:!?-]+$/, "");
+      if (nettoye.length === 1 && /[a-zà-öø-ÿ]/i.test(nettoye)) {
+        lettres += nettoye;
+        j++;
+      } else {
+        break;
+      }
+    }
+    if (lettres.length >= 3) {
+      resultat.push(lettres.toUpperCase());
+      i = j;
+    } else {
+      resultat.push(mots[i]);
+      i++;
+    }
+  }
+  return resultat.join(" ");
+}
+
+export async function interpreterCommandeVocale(texteBrut: string): Promise<ResultatAssistantVocal> {
+  const texte = reconstruireLettresEpelees(texteBrut);
   const motifDossier = texte.match(MOTIF_DOSSIER_DE) ?? texte.match(MOTIF_DOSSIER_DIRECT);
   if (motifDossier) {
     return chercherPatient(motifDossier[1]);
@@ -433,6 +615,18 @@ export async function interpreterCommandeVocale(texte: string): Promise<Resultat
       return relancerRechercheMutuelle((blocOutil.input as { patient?: string }).patient ?? "");
     case "repasser_en_attente":
       return demanderConfirmationRepasserEnAttente((blocOutil.input as { patient?: string }).patient ?? "");
+    case "ouvrir_document": {
+      const entree = blocOutil.input as { patient?: string; typeDocument?: string };
+      return ouvrirDocument(entree.patient ?? "", entree.typeDocument ?? "document");
+    }
+    case "creer_dossier": {
+      const entree = blocOutil.input as { prenom?: string; nom?: string };
+      return creerDossier(entree.prenom ?? "", entree.nom ?? "");
+    }
+    case "modifier_contact_dossier": {
+      const entree = blocOutil.input as { patient?: string; champ?: string; valeur?: string };
+      return demanderConfirmationModifierContact(entree.patient ?? "", entree.champ ?? "", entree.valeur ?? "");
+    }
     default:
       return { type: "message", texte: "Commande non reconnue." };
   }
@@ -460,6 +654,26 @@ export async function executerActionConfirmee(action: string, parametres: unknow
       return { type: "message", texte: resultat.erreur };
     }
     return { type: "message", texte: "Demande remise en attente." };
+  }
+  if (action === "modifier_contact_dossier") {
+    const params = parametres as { personneId?: string; champ?: string; valeur?: string } | null;
+    const personneId = params?.personneId;
+    const champ = params?.champ;
+    const valeur = params?.valeur;
+    if (typeof personneId !== "string" || !personneId || !champ || !estChampContactModifiable(champ) || typeof valeur !== "string" || !valeur) {
+      return { type: "message", texte: "Paramètres invalides." };
+    }
+    const personne = await prisma.personne.update({ where: { id: personneId }, data: { [champ]: valeur } });
+    await journaliser({
+      type: "personne.modifiee",
+      entite: "Personne",
+      entiteId: personneId,
+      personneId,
+      acteur,
+      donnees: { [champ]: valeur },
+    });
+    const nomComplet = [personne.prenom, personne.nom].filter(Boolean).join(" ");
+    return { type: "message", texte: `Contact mis à jour pour ${nomComplet}.` };
   }
   return { type: "message", texte: "Action non reconnue." };
 }
