@@ -263,7 +263,25 @@ async function demanderConfirmationRepasserEnAttente(patientBrut: string): Promi
   };
 }
 
+/**
+ * Reconnaît directement, sans passer par l'IA, le tournure la plus fréquente
+ * ("ouvre le dossier de Malika Cazal") — constaté en production : avec de
+ * plus en plus d'outils disponibles (chercher_produit, relancer_recherche_mutuelle...),
+ * le modèle hésite parfois entre `naviguer` (destination "dossiers", à cause
+ * du mot "dossier" dans la phrase) et `chercher_patient`, ce qui rendait
+ * cette formulation pourtant la plus courante peu fiable. Ce raccourci
+ * déterministe la sécurise indépendamment du choix de l'IA — sans rien
+ * retirer : les formulations qui ne matchent pas ce motif (ex. "dossiers au
+ * nom de Cazal") continuent de passer par l'IA comme avant.
+ */
+const MOTIF_DOSSIER_DE = /\bdossiers?\s+d['e]\s*(.+)/i;
+
 export async function interpreterCommandeVocale(texte: string): Promise<ResultatAssistantVocal> {
+  const motifDossier = texte.match(MOTIF_DOSSIER_DE);
+  if (motifDossier) {
+    return chercherPatient(motifDossier[1]);
+  }
+
   const cleApi = process.env.ANTHROPIC_API_KEY;
   if (!cleApi) {
     return { type: "message", texte: "Assistant vocal indisponible : ANTHROPIC_API_KEY n'est pas configurée sur le serveur." };
