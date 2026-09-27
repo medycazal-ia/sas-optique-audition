@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { creerClientAnthropic } from "@/lib/anthropicClient";
 import { parserMesureOeil, validerFiness, validerRpps, type MesureOeil } from "@/lib/optique";
 import { detecterTypeMime, TYPES_NON_SUPPORTES_VISION, nomFormatNonSupporte } from "@/lib/detectionMime";
 
@@ -60,7 +60,7 @@ export async function extraireMesuresOrdonnance(contenu: Buffer, nomFichier: str
     );
   }
 
-  const client = new Anthropic({ apiKey: cleApi });
+  const client = creerClientAnthropic(cleApi);
   const mediaType = detecterTypeMime(contenu, nomFichier);
   if (TYPES_NON_SUPPORTES_VISION.has(mediaType)) {
     throw new Error(

@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { creerClientAnthropic } from "@/lib/anthropicClient";
 import { detecterTypeMime, TYPES_NON_SUPPORTES_VISION, nomFormatNonSupporte } from "@/lib/detectionMime";
 import { validerSiret } from "@/lib/entiteLegale";
 
@@ -60,7 +60,7 @@ export async function extraireEntiteLegale(contenu: Buffer, nomFichier: string):
     throw new Error("Extraction OCR indisponible : ANTHROPIC_API_KEY n'est pas configurée sur le serveur.");
   }
 
-  const client = new Anthropic({ apiKey: cleApi });
+  const client = creerClientAnthropic(cleApi);
   const mediaType = detecterTypeMime(contenu, nomFichier);
   if (TYPES_NON_SUPPORTES_VISION.has(mediaType)) {
     throw new Error(
