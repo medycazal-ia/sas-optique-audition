@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import Carrousel from "@/components/Carrousel";
 import { MODULES } from "@/lib/modules";
 import { lireSession, sessionEstDirecteurOuPlus, sessionEstSuperAdmin } from "@/lib/auth";
@@ -16,8 +17,9 @@ export default async function AccueilPage() {
     <main className="flex flex-1 flex-col gap-10 py-12">
       <div className="mx-auto w-full max-w-3xl px-6 text-center">
         <BarreModeDemo estDirecteurReel={estDirecteurOuPlus} estSuperAdminReel={estSuperAdmin} />
-        <p className="text-sm font-semibold uppercase tracking-widest text-orange-500">
-          SAS métier · Optique &amp; Audition
+        <Image src="/logo-facilog.svg" alt="FACILOG" width={64} height={64} className="mx-auto" priority unoptimized />
+        <p className="mt-2 text-sm font-semibold uppercase tracking-widest text-orange-500">
+          FACILOG · Optique &amp; Audition
         </p>
         <h1 className="mt-3 bg-gradient-to-r from-orange-500 via-fuchsia-500 to-indigo-500 bg-clip-text text-4xl font-extrabold text-transparent sm:text-5xl">
           Un seul dossier, tout le parcours
