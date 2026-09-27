@@ -183,6 +183,7 @@ Choisis l'outil le plus approprié à sa demande et appelle-le avec les bons arg
 
 export type ResultatAssistantVocal =
   | { type: "navigation"; url: string; libelle: string }
+  | { type: "document_popup"; url: string; titre: string }
   | { type: "resultats_patients"; personnes: { id: string; nom: string; prenom: string | null }[] }
   | { type: "confirmation"; description: string; action: string; parametres: Record<string, unknown> }
   | { type: "message"; texte: string };
@@ -433,6 +434,16 @@ const LIBELLES_TYPE_DOCUMENT: Record<string, string> = {
   document: "document",
 };
 
+/**
+ * Ouvre directement le document demandé dans une popup d'aperçu (voir
+ * AssistantVocal.tsx, type "document_popup") plutôt que de naviguer vers une
+ * page — "afficher"/"ouvrir" un devis/une facture/un document doit montrer
+ * le document lui-même. Le devis et la facture ont un PDF généré à la volée
+ * (déjà servi en "inline", donc directement affichable) ; l'ordonnance et
+ * "document" quelconque visent la pièce scannée la plus récente du type
+ * demandé (voir Document/TypeDocument), servie en aperçu via
+ * /telecharger?apercu=1.
+ */
 async function ouvrirDocument(patientBrut: string, typeDocument: string): Promise<ResultatAssistantVocal> {
   const personnes = await rechercherPersonnes(patientBrut);
   if (personnes.length === 0) {
@@ -453,18 +464,34 @@ async function ouvrirDocument(patientBrut: string, typeDocument: string): Promis
     if (!derniereProposition) {
       return { type: "message", texte: `${nomComplet} n'a aucun devis.` };
     }
-    // Libellé volontairement générique, sans nom ni prénom : dit à voix
-    // haute et affiché dans un magasin, à portée d'oreille/de vue d'autres
-    // clients — voir le même choix dans components/AssistantVocal.tsx.
-    return { type: "navigation", url: `/propositions/${derniereProposition.id}`, libelle: "devis actif" };
+    return { type: "document_popup", url: `/api/propositions/${derniereProposition.id}/formulaire`, titre: "Devis" };
   }
 
-  // Facture, ordonnance, ou document quelconque : pas de page dédiée, tout
-  // est consultable depuis le dossier du patient (voir HistoriqueDocuments).
+  if (typeDocument === "facture") {
+    const derniereFacture = await prisma.facture.findFirst({
+      where: { personneId: personne.id },
+      orderBy: { creeA: "desc" },
+    });
+    if (!derniereFacture) {
+      return { type: "message", texte: `${nomComplet} n'a aucune facture.` };
+    }
+    return { type: "document_popup", url: `/api/factures/${derniereFacture.id}/formulaire`, titre: "Facture" };
+  }
+
+  // Ordonnance ou document quelconque : pièce scannée la plus récente (voir
+  // Document/TypeDocument) — "ordonnance" cible spécifiquement ce type,
+  // "document" prend la plus récente quel que soit son type.
+  const document = await prisma.document.findFirst({
+    where: { personneId: personne.id, ...(typeDocument === "ordonnance" ? { type: "ORDONNANCE" } : {}) },
+    orderBy: { creeA: "desc" },
+  });
+  if (!document) {
+    return { type: "message", texte: `${nomComplet} n'a aucun${typeDocument === "ordonnance" ? "e ordonnance" : " document"} numérisé.` };
+  }
   return {
-    type: "navigation",
-    url: `/dossiers/${personne.id}`,
-    libelle: `dossier ouvert — ${libelle}s`,
+    type: "document_popup",
+    url: `/api/dossiers/${personne.id}/documents/${document.id}/telecharger?apercu=1`,
+    titre: libelle.charAt(0).toUpperCase() + libelle.slice(1),
   };
 }
 
