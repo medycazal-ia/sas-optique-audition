@@ -16,6 +16,10 @@ export default async function PropositionPage({ params }: { params: Promise<{ id
       lignes: { include: { produit: true }, orderBy: { creeA: "asc" } },
       remplace: { select: { id: true, statut: true, creeA: true } },
       remplaceePar: { select: { id: true, statut: true, creeA: true } },
+      demandes: { select: { id: true, statut: true, rang: true } },
+      commandes: {
+        select: { id: true, statut: true, livraison: { select: { id: true, statut: true, facture: { select: { id: true, statut: true } } } } },
+      },
     },
   });
 
