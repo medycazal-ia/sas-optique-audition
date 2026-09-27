@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { lireSession } from "@/lib/auth";
 import { finaliserConnexionGoogle, redirectUriGoogleCalendar } from "@/lib/googleCalendarRdv";
+import { SITE_URL } from "@/lib/siteUrl";
 
 /**
  * GET /api/super-admin/rdv-demo/callback — retour de Google après consentement
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
   const session = await lireSession();
   const code = request.nextUrl.searchParams.get("code");
   const erreurGoogle = request.nextUrl.searchParams.get("error");
-  const urlRetour = new URL("/super-admin/rdv-demo", request.nextUrl.origin);
+  const urlRetour = new URL("/super-admin/rdv-demo", SITE_URL);
 
   if (erreurGoogle) {
     urlRetour.searchParams.set("erreur", erreurGoogle);
