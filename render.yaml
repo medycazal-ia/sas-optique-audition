@@ -109,13 +109,32 @@ services:
       - key: TWILIO_FROM
         sync: false
       # Page publique /rdv-demo (bouton "RDV DEMO"/QR code de la page
-      # d'accueil) — URL d'intégration ("Embed") d'un agenda Google Calendar
-      # de type "Programme de rendez-vous" (Google Calendar > Paramètres de
-      # cet agenda > Intégrer l'agenda > coller ici l'URL src de l'iframe
-      # fournie par Google). Jamais stockée dans ce fichier ni dans git. Sans
-      # cette variable, la page reste utilisable : elle affiche un message
-      # clair invitant à contacter directement plutôt qu'un agenda vide.
-      - key: GOOGLE_CALENDAR_RDV_URL
+      # d'accueil) — prise de rendez-vous "maison" au-dessus de l'API Google
+      # Calendar (voir lib/googleCalendarRdv.ts ; Google ne permet de créer
+      # un agenda ou un "Programme de rendez-vous" que depuis son interface
+      # web, jamais par API). Identifiants OAuth2 propres à l'exploitant,
+      # jamais stockés dans ce fichier ni dans git — à créer sur
+      # console.cloud.google.com :
+      #   1. Nouveau projet (ou existant) > APIs & Services > activer
+      #      "Google Calendar API".
+      #   2. APIs & Services > Écran de consentement OAuth > type "Externe",
+      #      renseigner le nom de l'appli (FACILOG) — pas besoin de
+      #      validation Google pour un usage personnel en mode "Test".
+      #   3. Identifiants > Créer des identifiants > ID client OAuth > type
+      #      "Application Web" > Origines JavaScript autorisées :
+      #      https://sas-optique-audition.onrender.com > URI de
+      #      redirection autorisés :
+      #      https://sas-optique-audition.onrender.com/api/super-admin/rdv-demo/callback
+      #   4. Coller ici l'ID client et le code secret obtenus.
+      # Une fois ces deux variables renseignées, connectez l'agenda depuis
+      # Super Admin > Prise de RDV (bouton "Connecter Google Calendar") —
+      # étape qui ne peut se faire que depuis l'écran Google lui-même (un
+      # consentement ne peut pas être donné par API). Sans ces variables, la
+      # page /rdv-demo reste utilisable : elle affiche un message clair
+      # invitant à contacter directement plutôt qu'un sélecteur vide.
+      - key: GOOGLE_CALENDAR_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CALENDAR_CLIENT_SECRET
         sync: false
 
 databases:

@@ -1139,3 +1139,33 @@ model ModeleDocument {
 
   @@index([type])
 }
+
+/**
+ * Réservation "maison" de la page publique /rdv-demo — remplace le
+ * "Programme de rendez-vous" natif de Google Calendar (non pilotable par
+ * API, voir lib/googleCalendarRdv.ts) par une prise de créneau directement
+ * sur facilog.site, qui crée l'événement via l'API Google Calendar une fois
+ * l'agenda du fondateur connecté (voir /super-admin/rdv-demo). Ligne
+ * singleton (id fixe "singleton") — un seul agenda connecté à la fois.
+ */
+model ConfigurationRdv {
+  id String @id @default("singleton")
+
+  // Jeton de rafraîchissement OAuth2 obtenu lors de la connexion — voir
+  // api/super-admin/rdv-demo/callback/route.ts. googleEmailCompte n'est
+  // affiché qu'à titre indicatif dans l'écran Super Admin.
+  googleRefreshToken String?
+  googleEmailCompte  String?
+  googleCalendarId   String  @default("primary")
+
+  dureeCreneauMinutes Int   @default(30)
+  heureDebut          String @default("09:00") // "HH:mm", fuseau Europe/Paris
+  heureFin            String @default("18:00")
+  joursOuvres         Int[] @default([1, 2, 3, 4, 5]) // 0=dimanche … 6=samedi
+
+  connecteA   DateTime?
+  connectePar String?
+
+  creeA DateTime @default(now())
+  majA  DateTime @updatedAt
+}

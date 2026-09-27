@@ -1,15 +1,21 @@
+import { prisma } from "@/lib/prisma";
+import RdvDemoClient from "./RdvDemoClient";
+
+export const dynamic = "force-dynamic";
+
 /**
  * Page publique (hors connexion) — accessible par le lien court partagé sur
  * la page d'accueil et par le QR code "RDV DEMO" (voir
- * api/rdv-demo/qrcode). Affiche un agenda de prise de rendez-vous Google
- * Calendar (fonctionnalité "Programme de rendez-vous"), dont l'URL est
- * propre à chaque exploitant du logiciel et n'est donc jamais codée en dur
- * ici — voir GOOGLE_CALENDAR_RDV_URL dans render.yaml. Sans cette variable,
- * la page reste utilisable : elle affiche un message clair plutôt qu'un
- * agenda vide ou une erreur.
+ * api/rdv-demo/qrcode). Réservation "maison" (voir lib/googleCalendarRdv.ts
+ * et RdvDemoClient) : Google ne permettant pas de créer un "Programme de
+ * rendez-vous" par API, on construit la même chose nous-mêmes au-dessus de
+ * l'API Google Calendar standard, une fois l'agenda du fondateur connecté
+ * (voir /super-admin/rdv-demo). Sans connexion, affiche un message clair
+ * plutôt qu'un sélecteur vide.
  */
-export default function RdvDemoPage() {
-  const urlAgenda = process.env.GOOGLE_CALENDAR_RDV_URL;
+export default async function RdvDemoPage() {
+  const config = await prisma.configurationRdv.findUnique({ where: { id: "singleton" } });
+  const configure = Boolean(config?.googleRefreshToken);
 
   return (
     <main className="flex flex-1 flex-col items-center gap-6 px-4 py-10 sm:px-6">
@@ -24,19 +30,12 @@ export default function RdvDemoPage() {
         </p>
       </div>
 
-      {urlAgenda ? (
-        <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-neutral-200 shadow-lg">
-          <iframe
-            src={urlAgenda}
-            title="Prise de rendez-vous FACILOG"
-            className="h-[720px] w-full"
-            style={{ border: 0 }}
-          />
-        </div>
+      {configure ? (
+        <RdvDemoClient />
       ) : (
         <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50 px-6 py-8 text-center text-sm text-amber-800">
-          L&apos;agenda de prise de rendez-vous n&apos;est pas encore configuré. Contactez-nous directement pour
-          convenir d&apos;un créneau.
+          La prise de rendez-vous n&apos;est pas encore configurée. Contactez-nous directement pour convenir
+          d&apos;un créneau.
         </div>
       )}
     </main>

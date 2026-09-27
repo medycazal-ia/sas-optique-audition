@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="FACILOG">
+  <!--
+    Marque FACILOG — lunette/œil + onde sonore, en référence au logo fourni
+    par le fondateur (optique + audition). Recréée en SVG plutôt que copiée
+    telle quelle : l'image collée dans la conversation n'a pas de fichier
+    accessible dans cet environnement (pas de chemin disque correspondant) —
+    à remplacer directement par l'export réel (même chemin, public/logo-facilog.svg)
+    dès qu'il est disponible sous forme de fichier.
+  -->
+  <circle cx="100" cy="100" r="92" fill="#F4F6F9" />
+
+  <!-- ondes sonores concentriques, côté droit de l'œil -->
+  <path d="M 128 62 A 62 62 0 0 1 128 138" fill="none" stroke="#8FC1E8" stroke-width="7" stroke-linecap="round" />
+  <path d="M 118 74 A 46 46 0 0 1 118 126" fill="none" stroke="#8FC1E8" stroke-width="7" stroke-linecap="round" />
+
+  <!-- monture de lunette formant le contour de l'œil -->
+  <path
+    d="M 40 96
+       Q 44 78 60 78
+       L 72 78
+       Q 92 78 102 92
+       Q 118 76 138 92
+       Q 146 100 138 108
+       Q 118 124 102 108
+       Q 92 122 72 122
+       Q 52 122 46 106"
+    fill="none"
+    stroke="#173A63"
+    stroke-width="9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- branche de la lunette -->
+  <rect x="30" y="90" width="14" height="12" rx="3" fill="#173A63" />
+
+  <!-- pupille -->
+  <circle cx="103" cy="100" r="15" fill="#173A63" />
+  <circle cx="108" cy="95" r="4" fill="#F4F6F9" />
+
+  <!-- onde (électrocardiogramme / son) traversant la pupille -->
+  <path
+    d="M 96 100 L 112 100 L 118 82 L 126 118 L 133 100 L 150 100"
+    fill="none"
+    stroke="#EE7C2E"
+    stroke-width="7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
