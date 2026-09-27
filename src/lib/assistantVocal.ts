@@ -139,53 +139,114 @@ function variantesPhonetiques(mot: string): string[] {
   const variantes = new Set([mot]);
   variantes.add(mot.replace(/z/gi, "s"));
   variantes.add(mot.replace(/s/gi, "z"));
+  // "y"/"i" se prononcent pareil en français ("Medy" transcrit "Medi").
+  variantes.add(mot.replace(/y/gi, "i"));
+  variantes.add(mot.replace(/i/gi, "y"));
   return [...variantes];
+}
+
+/**
+ * Mots de liaison/politesse fréquents dans une phrase dite au micro
+ * ("Malika Cazal s'il te plaît", "trouve-moi Dupont merci") — à exclure de
+ * la recherche mot-par-mot ci-dessous : sinon la condition "tous les mots
+ * doivent matcher nom OU prénom" échoue dès qu'un seul mot de politesse
+ * traîne après le nom, alors que le nom lui-même est correct.
+ */
+const MOTS_VIDES = new Set([
+  "le", "la", "les", "l", "de", "du", "des", "d", "au", "aux", "nom",
+  "s'il", "sil", "vous", "te", "plait", "plaît", "merci", "voila", "voilà",
+  "stp", "svp", "donc", "alors", "euh", "hein", "dossier", "dossiers",
+]);
+
+function motsPertinents(requete: string): string[] {
+  return requete
+    .split(/\s+/)
+    .map((m) => m.replace(/[.,!?;:]+$/, ""))
+    .filter((m) => m.length >= 2 && !MOTS_VIDES.has(m.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()));
+}
+
+/**
+ * Recherche un patient dont la reconnaissance vocale a collé le prénom et le
+ * nom en un seul mot sans espace (constaté en conditions réelles : "Medy
+ * Cazal" transcrit "Medicasal") — essaie toutes les coupures possibles du
+ * mot et vérifie chaque moitié contre nom/prénom (dans les deux ordres, avec
+ * variantes phonétiques).
+ */
+async function chercherMotAccole(mot: string): Promise<{ id: string; nom: string; prenom: string | null }[]> {
+  if (mot.length < 4) return [];
+  const combinaisons: Array<{ AND: [{ OR: object[] }, { OR: object[] }] }> = [];
+  for (let i = 2; i <= mot.length - 2; i++) {
+    const gauche = variantesPhonetiques(mot.slice(0, i));
+    const droite = variantesPhonetiques(mot.slice(i));
+    combinaisons.push({
+      AND: [
+        { OR: gauche.map((v) => ({ prenom: { startsWith: v, mode: "insensitive" as const } })) },
+        { OR: droite.map((v) => ({ nom: { startsWith: v, mode: "insensitive" as const } })) },
+      ],
+    });
+    combinaisons.push({
+      AND: [
+        { OR: gauche.map((v) => ({ nom: { startsWith: v, mode: "insensitive" as const } })) },
+        { OR: droite.map((v) => ({ prenom: { startsWith: v, mode: "insensitive" as const } })) },
+      ],
+    });
+  }
+  return prisma.personne.findMany({
+    where: { OR: combinaisons },
+    orderBy: { nom: "asc" },
+    take: 5,
+    select: { id: true, nom: true, prenom: true },
+  });
 }
 
 async function rechercherPersonnes(requeteBrute: string): Promise<{ id: string; nom: string; prenom: string | null }[]> {
   const requete = requeteBrute.trim();
   if (!requete) return [];
 
-  const variantesRequete = variantesPhonetiques(requete);
+  const mots = motsPertinents(requete);
+  if (mots.length === 0) return [];
 
-  const parPrefixe = await prisma.personne.findMany({
-    where: {
-      OR: [
-        ...variantesRequete.flatMap((v) => [
-          { nom: { startsWith: v, mode: "insensitive" as const } },
-          { prenom: { startsWith: v, mode: "insensitive" as const } },
-        ]),
-        { numeroSecuriteSociale: { startsWith: requete } },
-      ],
-    },
-    orderBy: { nom: "asc" },
-    take: 5,
-    select: { id: true, nom: true, prenom: true },
-  });
-  if (parPrefixe.length > 0) return parPrefixe;
-
-  // Requête à deux mots ("Malika Cazal") non trouvée en préfixe simple (ordre
-  // nom/prénom inconnu, ou reconnaissance vocale ayant inversé les mots) :
-  // on cherche chaque mot indépendamment dans nom OU prénom.
-  const mots = requete.split(/\s+/).filter((m) => m.length >= 2);
-  if (mots.length >= 2) {
-    const parMots = await prisma.personne.findMany({
+  // Un seul mot significatif après avoir écarté les mots de liaison/politesse
+  // ("Cazal", ou "Cazal s'il te plaît") : recherche par préfixe (rapide), en
+  // tentant aussi les variantes phonétiques et le numéro de sécu.
+  if (mots.length === 1) {
+    const parPrefixe = await prisma.personne.findMany({
       where: {
-        AND: mots.map((mot) => ({
-          OR: variantesPhonetiques(mot).flatMap((v) => [
-            { nom: { contains: v, mode: "insensitive" as const } },
-            { prenom: { contains: v, mode: "insensitive" as const } },
+        OR: [
+          ...variantesPhonetiques(mots[0]).flatMap((v) => [
+            { nom: { startsWith: v, mode: "insensitive" as const } },
+            { prenom: { startsWith: v, mode: "insensitive" as const } },
           ]),
-        })),
+          { numeroSecuriteSociale: { startsWith: requete } },
+        ],
       },
       orderBy: { nom: "asc" },
       take: 5,
       select: { id: true, nom: true, prenom: true },
     });
-    if (parMots.length > 0) return parMots;
+    if (parPrefixe.length > 0) return parPrefixe;
+    // Rien trouvé : la reconnaissance vocale a pu accoler prénom et nom sans
+    // espace ("Medy Cazal" transcrit "Medicasal") — on tente de recoller les
+    // morceaux en essayant toutes les coupures possibles du mot.
+    return chercherMotAccole(mots[0]);
   }
 
-  return [];
+  // Plusieurs mots significatifs ("Malika Cazal", ordre nom/prénom inconnu,
+  // ou reconnaissance vocale ayant inversé les mots) : chaque mot doit se
+  // retrouver, indépendamment, dans le nom OU le prénom.
+  return prisma.personne.findMany({
+    where: {
+      AND: mots.map((mot) => ({
+        OR: variantesPhonetiques(mot).flatMap((v) => [
+          { nom: { contains: v, mode: "insensitive" as const } },
+          { prenom: { contains: v, mode: "insensitive" as const } },
+        ]),
+      })),
+    },
+    orderBy: { nom: "asc" },
+    take: 5,
+    select: { id: true, nom: true, prenom: true },
+  });
 }
 
 async function chercherPatient(requeteBrute: string): Promise<ResultatAssistantVocal> {
@@ -313,8 +374,18 @@ const MOTIF_DOSSIER_DE = /\bdossiers?\s+d['e]\s*(.+)/i;
  */
 const MOTIF_CHERCHE_PATIENT = /^(?:cherche|trouve)(?:z|-moi)?\s+(?!.*\b(?:produit|référence|fournisseur|marque|modèle)\b)(.+)/i;
 
+/**
+ * Variante de MOTIF_DOSSIER_DE pour "dossier NOM" dit sans article ("ouvre
+ * dossier Medicasal") — constaté en production, la reconnaissance vocale
+ * avale parfois le "de"/"d'" attendu. Le lookahead négatif exclut le mot
+ * suivant quand c'est un article/liaison ("dossiers au nom de Cazal" doit
+ * continuer à passer par l'IA comme avant, MOTIF_DOSSIER_DE ne matchant pas
+ * cette formulation-là non plus).
+ */
+const MOTIF_DOSSIER_DIRECT = /\bdossiers?\s+(?!(?:au|du|de|des|d['’]|le|la|les|nom)\b)(.+)/i;
+
 export async function interpreterCommandeVocale(texte: string): Promise<ResultatAssistantVocal> {
-  const motifDossier = texte.match(MOTIF_DOSSIER_DE);
+  const motifDossier = texte.match(MOTIF_DOSSIER_DE) ?? texte.match(MOTIF_DOSSIER_DIRECT);
   if (motifDossier) {
     return chercherPatient(motifDossier[1]);
   }
