@@ -41,6 +41,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   if (proposition.statut !== "ENVOYEE") {
     return NextResponse.json({ erreur: "Seule une proposition envoyée peut être signée." }, { status: 409 });
   }
+  const remplaceePar = await prisma.proposition.findUnique({ where: { remplaceId: id } });
+  if (remplaceePar) {
+    return NextResponse.json(
+      { erreur: "Ce devis a été remplacé par une version plus récente — faites signer la nouvelle version à la place." },
+      { status: 409 },
+    );
+  }
 
   if (mode === "SMS") {
     const code = typeof body.code === "string" ? body.code : "";

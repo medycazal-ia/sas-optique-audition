@@ -14,6 +14,8 @@ type PropositionComplete = Proposition & {
   lignes: (PropositionLigne & { produit: Produit })[];
   remplace: { id: string; statut: string; creeA: Date } | null;
   remplaceePar: { id: string; statut: string; creeA: Date } | null;
+  demandes: { id: string; statut: string; rang: string }[];
+  commandes: { id: string; statut: string; livraison: { id: string; statut: string; facture: { id: string; statut: string } | null } | null }[];
 };
 
 const LIBELLE_STATUT: Record<string, string> = {
@@ -345,7 +347,7 @@ function Actions({
   telephone,
   onFait,
 }: {
-  proposition: Proposition;
+  proposition: PropositionComplete;
   telephone: string | null;
   onFait: () => void;
 }) {
@@ -425,14 +427,24 @@ function Actions({
           </button>
         </>
       )}
-      {(proposition.statut === "REFUSEE" || proposition.statut === "EXPIREE") && !proposition.remplaceId && (
-        <button
-          onClick={nouvelleVersion}
-          disabled={envoi}
-          className="rounded-full border border-neutral-300 px-5 py-2.5 text-sm font-semibold hover:bg-neutral-50 disabled:opacity-50"
-        >
-          Composer une nouvelle version
-        </button>
+      {proposition.statut !== "BROUILLON" && !proposition.remplaceePar && (
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={nouvelleVersion}
+            disabled={envoi}
+            className="rounded-full border border-neutral-300 px-5 py-2.5 text-sm font-semibold hover:bg-neutral-50 disabled:opacity-50"
+          >
+            Réviser (nouvelle version)
+          </button>
+          {(proposition.statut === "ENVOYEE" || proposition.statut === "ACCEPTEE") && (
+            <p className="max-w-md text-xs text-amber-700">
+              ⚠️ Ce devis a déjà été {proposition.statut === "ACCEPTEE" ? "signé" : "envoyé"} — la nouvelle version devra être
+              renvoyée et re-signée. {proposition.demandes.length > 0 && "Une nouvelle demande de tiers payant sera créée à son acceptation — l'ancienne ne concerne plus le nouveau montant. "}
+              {proposition.commandes.some((c) => c.livraison?.facture) &&
+                "Une facture existe déjà pour ce devis : établissez un avoir dessus avant d'en émettre une nouvelle une fois la version révisée acceptée."}
+            </p>
+          )}
+        </div>
       )}
       {proposition.statut === "ACCEPTEE" && proposition.signatureMode && (
         <span className="text-xs text-neutral-500">

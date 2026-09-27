@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
+import type { Proposition, PropositionLigne } from "@prisma/client";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -36,15 +37,48 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 
   const remplaceId = typeof body.remplaceId === "string" ? body.remplaceId : undefined;
+  let precedente: (Proposition & { lignes: PropositionLigne[] }) | null = null;
   if (remplaceId) {
-    const precedente = await prisma.proposition.findUnique({ where: { id: remplaceId } });
+    precedente = await prisma.proposition.findUnique({ where: { id: remplaceId }, include: { lignes: true } });
     if (!precedente || precedente.personneId !== id) {
       return NextResponse.json({ erreur: "remplaceId doit référencer une proposition du même dossier." }, { status: 400 });
     }
   }
 
   const proposition = await prisma.proposition.create({
-    data: { personneId: id, remplaceId, notes: typeof body.notes === "string" ? body.notes : null },
+    data: {
+      personneId: id,
+      remplaceId,
+      notes: typeof body.notes === "string" ? body.notes : null,
+      // Révision d'un devis déjà envoyé/accepté/refusé : on repart des mêmes
+      // lignes (produits, prix, remise, correction verre) pour ne pas obliger
+      // à tout recomposer pour un simple ajustement — voir "Réviser (nouvelle
+      // version)" dans PropositionDetailClient.tsx.
+      ...(precedente
+        ? {
+            lignes: {
+              create: precedente.lignes.map((l) => ({
+                produitId: l.produitId,
+                libelleProduit: l.libelleProduit,
+                quantite: l.quantite,
+                prixUnitaireTTC: l.prixUnitaireTTC,
+                remisePourcent: l.remisePourcent,
+                descriptionProduit: l.descriptionProduit,
+                marqueProduit: l.marqueProduit,
+                fournisseurNom: l.fournisseurNom,
+                sphereOD: l.sphereOD,
+                cylindreOD: l.cylindreOD,
+                axeOD: l.axeOD,
+                additionOD: l.additionOD,
+                sphereOG: l.sphereOG,
+                cylindreOG: l.cylindreOG,
+                axeOG: l.axeOG,
+                additionOG: l.additionOG,
+              })),
+            },
+          }
+        : {}),
+    },
   });
 
   await journaliser({
