@@ -140,14 +140,18 @@ const OUTILS: Anthropic.Tool[] = [
     },
   },
   {
-    name: "modifier_contact_dossier",
+    name: "modifier_dossier",
     description:
-      "Modifie le téléphone, l'email ou l'adresse d'un patient (ex: \"change le téléphone de Malika Cazal en 06...\", \"modifie l'email de Dupont\"). Modifie une donnée — nécessite une confirmation avant d'être réellement appliqué. Pour tout le reste (montant d'une facture, statut d'un dossier...), ce n'est pas cet outil — ne pas l'utiliser.",
+      "Corrige le nom, le prénom, le téléphone, l'email ou l'adresse d'un patient (ex: \"change le téléphone de Malika Cazal en 06...\", \"corrige le prénom de Dupont en Jean\", \"modifie l'adresse de X\"). Modifie une donnée — nécessite une confirmation avant d'être réellement appliqué. Pour tout le reste (montant d'une facture, statut d'un dossier...), ce n'est pas cet outil — ne pas l'utiliser.",
     input_schema: {
       type: "object",
       properties: {
-        patient: { type: "string", description: "Nom et/ou prénom du patient concerné." },
-        champ: { type: "string", enum: ["telephone", "email", "adresse"], description: "Le champ à modifier." },
+        patient: { type: "string", description: "Nom et/ou prénom du patient concerné (tel qu'il est déjà connu — pas la nouvelle valeur si on renomme)." },
+        champ: {
+          type: "string",
+          enum: ["nom", "prenom", "telephone", "email", "adresse", "adresseLigne2", "codePostal", "ville"],
+          description: "adresse = ligne 1 ; adresseLigne2 = complément (bâtiment, étage...).",
+        },
         valeur: { type: "string", description: "La nouvelle valeur, telle que dite." },
       },
       required: ["patient", "champ", "valeur"],
@@ -166,14 +170,15 @@ export type ResultatAssistantVocal =
   | { type: "message"; texte: string };
 
 /** Les seules actions qui modifient des données — jamais exécutées directement par interpreterCommandeVocale, uniquement via executerActionConfirmee après un accord explicite de l'utilisateur. */
-const ACTIONS_CONFIRMABLES = ["repasser_en_attente", "modifier_contact_dossier"] as const;
+const ACTIONS_CONFIRMABLES = ["repasser_en_attente", "modifier_dossier"] as const;
 type ActionConfirmable = (typeof ACTIONS_CONFIRMABLES)[number];
 
-const CHAMPS_CONTACT_MODIFIABLES = ["telephone", "email", "adresse"] as const;
-type ChampContactModifiable = (typeof CHAMPS_CONTACT_MODIFIABLES)[number];
+/** Même liste que CHAMPS_MODIFIABLES dans /api/dossiers/[id]/route.ts, restreinte aux champs simples qu'il est raisonnable de dicter (pas civilité, NSS, préférences de contact...). */
+const CHAMPS_DOSSIER_MODIFIABLES = ["nom", "prenom", "telephone", "email", "adresse", "adresseLigne2", "codePostal", "ville"] as const;
+type ChampDossierModifiable = (typeof CHAMPS_DOSSIER_MODIFIABLES)[number];
 
-function estChampContactModifiable(champ: string): champ is ChampContactModifiable {
-  return (CHAMPS_CONTACT_MODIFIABLES as readonly string[]).includes(champ);
+function estChampDossierModifiable(champ: string): champ is ChampDossierModifiable {
+  return (CHAMPS_DOSSIER_MODIFIABLES as readonly string[]).includes(champ);
 }
 
 function estActionConfirmable(action: string): action is ActionConfirmable {
@@ -463,12 +468,12 @@ function creerDossier(prenom: string, nom: string): ResultatAssistantVocal {
   };
 }
 
-async function demanderConfirmationModifierContact(
+async function demanderConfirmationModifierDossier(
   patientBrut: string,
   champ: string,
   valeur: string,
 ): Promise<ResultatAssistantVocal> {
-  if (!estChampContactModifiable(champ)) {
+  if (!estChampDossierModifiable(champ)) {
     return { type: "message", texte: "Ce champ n'est pas modifiable à la voix." };
   }
   if (!valeur.trim()) {
@@ -483,15 +488,20 @@ async function demanderConfirmationModifierContact(
   }
   const personne = personnes[0];
   const nomComplet = [personne.prenom, personne.nom].filter(Boolean).join(" ");
-  const libellesChamp: Record<ChampContactModifiable, string> = {
+  const libellesChamp: Record<ChampDossierModifiable, string> = {
+    nom: "le nom",
+    prenom: "le prénom",
     telephone: "le téléphone",
     email: "l'email",
     adresse: "l'adresse",
+    adresseLigne2: "le complément d'adresse",
+    codePostal: "le code postal",
+    ville: "la ville",
   };
   return {
     type: "confirmation",
     description: `Modifier ${libellesChamp[champ]} de ${nomComplet} en « ${valeur.trim()} » ?`,
-    action: "modifier_contact_dossier",
+    action: "modifier_dossier",
     parametres: { personneId: personne.id, champ, valeur: valeur.trim() },
   };
 }
@@ -623,9 +633,9 @@ export async function interpreterCommandeVocale(texteBrut: string): Promise<Resu
       const entree = blocOutil.input as { prenom?: string; nom?: string };
       return creerDossier(entree.prenom ?? "", entree.nom ?? "");
     }
-    case "modifier_contact_dossier": {
+    case "modifier_dossier": {
       const entree = blocOutil.input as { patient?: string; champ?: string; valeur?: string };
-      return demanderConfirmationModifierContact(entree.patient ?? "", entree.champ ?? "", entree.valeur ?? "");
+      return demanderConfirmationModifierDossier(entree.patient ?? "", entree.champ ?? "", entree.valeur ?? "");
     }
     default:
       return { type: "message", texte: "Commande non reconnue." };
@@ -655,12 +665,12 @@ export async function executerActionConfirmee(action: string, parametres: unknow
     }
     return { type: "message", texte: "Demande remise en attente." };
   }
-  if (action === "modifier_contact_dossier") {
+  if (action === "modifier_dossier") {
     const params = parametres as { personneId?: string; champ?: string; valeur?: string } | null;
     const personneId = params?.personneId;
     const champ = params?.champ;
     const valeur = params?.valeur;
-    if (typeof personneId !== "string" || !personneId || !champ || !estChampContactModifiable(champ) || typeof valeur !== "string" || !valeur) {
+    if (typeof personneId !== "string" || !personneId || !champ || !estChampDossierModifiable(champ) || typeof valeur !== "string" || !valeur) {
       return { type: "message", texte: "Paramètres invalides." };
     }
     const personne = await prisma.personne.update({ where: { id: personneId }, data: { [champ]: valeur } });
