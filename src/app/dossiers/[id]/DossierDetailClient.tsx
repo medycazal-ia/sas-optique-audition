@@ -222,6 +222,7 @@ const LIBELLE_TYPE_DOCUMENT: Record<string, string> = {
   DEVIS_SIGNE: "Devis signé",
   CONSENTEMENT_RGPD: "Consentement RGPD",
   REPONSE_MUTUELLE: "Réponse mutuelle",
+  SYNTHESE_BESOIN: "Synthèse besoin",
   AUTRE: "Autre",
 };
 
@@ -4221,6 +4222,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
   const [style, setStyle] = useState<StyleBesoin[]>((personne.styleBesoin as StyleBesoin[]) ?? []);
   const [enregistrement, setEnregistrement] = useState(false);
   const [questionnaireActif, setQuestionnaireActif] = useState(false);
+  const [modeMuet, setModeMuet] = useState(false);
   const [envoi, setEnvoi] = useState<"brouillon" | "validation" | "extraction" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [documentPopup, setDocumentPopup] = useState<string | null>(null);
@@ -4325,11 +4327,22 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
    * vocale) et écoute chaque réponse tour à tour, avec un ton conversationnel
    * plutôt qu'une liste de cases à cocher — puis lance automatiquement
    * l'extraction sur l'ensemble question/réponse accumulé.
+   *
+   * En mode muet (l'utilisateur mène lui-même l'échange avec le client, en
+   * face à face), l'assistant ne parle pas du tout — on se contente de
+   * démarrer l'écoute continue du micro, qui capte indifféremment les deux
+   * interlocuteurs (voir demarrerEnregistrement). La fin de la conversation
+   * (bouton "Terminer", voir arreterConversation) déclenche alors la même
+   * extraction automatique que la fin du questionnaire parlé.
    */
   async function lancerQuestionnaire() {
     if (questionnaireActif || enregistrement) return;
-    setQuestionnaireActif(true);
     setMessage(null);
+    if (modeMuet) {
+      demarrerEnregistrement();
+      return;
+    }
+    setQuestionnaireActif(true);
     let historique = "";
     await parlerPromesse(
       "Bonjour, je voudrais discuter avec vous de vos besoins en termes de lunettes et de vos attentes. " +
@@ -4345,6 +4358,20 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
     await parlerPromesse("Merci, j'ai bien noté vos réponses.");
     setQuestionnaireActif(false);
     await extraireBesoins((transcription ? `${transcription}\n\n` : "") + historique.trim());
+  }
+
+  /**
+   * Arrête l'écoute en cours. En mode muet, ce bouton *est* la fin de la
+   * conversation menée par l'utilisateur — on enchaîne donc directement sur
+   * l'extraction des besoins, comme à la fin du questionnaire parlé. Hors
+   * mode muet, c'est un simple arrêt d'un enregistrement libre (comportement
+   * inchangé) : l'extraction reste un geste volontaire séparé.
+   */
+  async function arreterConversation() {
+    arreterEnregistrement();
+    if (modeMuet) {
+      await extraireBesoins();
+    }
   }
 
   async function enregistrerBrouillon() {
@@ -4485,6 +4512,16 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
           🎙️ Ouvrir l&apos;audit
         </button>
         <button
+          onClick={() => setModeMuet((m) => !m)}
+          disabled={enregistrement || questionnaireActif}
+          className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${
+            modeMuet ? "bg-fuchsia-600 text-white" : "border border-neutral-300 hover:bg-neutral-50"
+          }`}
+          title="À activer si vous menez vous-même la conversation avec le client en face à face : l'assistante n'interviendra pas, elle écoute silencieusement."
+        >
+          {modeMuet ? "🔇 Mode muet activé" : "🔇 Mode muet (je mène la conversation)"}
+        </button>
+        <button
           onClick={ouvrirDocumentSolutions}
           disabled={chipsBesoins.length === 0}
           className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
@@ -4514,22 +4551,35 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            {modeMuet && (
+              <p className="mb-2 rounded-md bg-fuchsia-50 px-3 py-2 text-xs font-medium text-fuchsia-800">
+                🔇 Mode muet : l&apos;assistante n&apos;interviendra pas — menez la conversation avec le client, puis cliquez sur « Terminer l&apos;audit ».
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={enregistrement ? arreterEnregistrement : demarrerEnregistrement}
+                onClick={enregistrement ? arreterConversation : demarrerEnregistrement}
                 disabled={questionnaireActif}
                 className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${
                   enregistrement ? "animate-pulse bg-red-500 text-white" : "border border-neutral-300 hover:bg-neutral-50"
                 }`}
               >
-                {enregistrement ? "⏹ Arrêter l'enregistrement" : "🎙️ Enregistrer la conversation"}
+                {enregistrement
+                  ? modeMuet
+                    ? "⏹ Terminer l'audit"
+                    : "⏹ Arrêter l'enregistrement"
+                  : "🎙️ Enregistrer la conversation"}
               </button>
               <button
                 onClick={lancerQuestionnaire}
                 disabled={enregistrement || questionnaireActif || envoi !== null}
                 className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
               >
-                {questionnaireActif ? "🗣️ Questionnaire en cours…" : "🗣️ Recommencer le questionnaire"}
+                {questionnaireActif
+                  ? "🗣️ Questionnaire en cours…"
+                  : modeMuet
+                    ? "🎙️ (Re)lancer l'écoute"
+                    : "🗣️ Recommencer le questionnaire"}
               </button>
               <button
                 onClick={() => extraireBesoins()}

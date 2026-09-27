@@ -444,6 +444,7 @@ enum TypeDocument {
   DEVIS_SIGNE
   CONSENTEMENT_RGPD
   REPONSE_MUTUELLE // courrier de réponse de la mutuelle (accord/refus) — voir lib/ocrAccordMutuelle.ts
+  SYNTHESE_BESOIN // PDF de la synthèse besoin validée (carte Audit) — voir lib/auditPdf.ts
   AUTRE
 }
 
