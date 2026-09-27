@@ -64,6 +64,13 @@ export default function AssistantVocal() {
   const [confirmation, setConfirmation] = useState<{ description: string; action: string; parametres: Record<string, unknown> } | null>(null);
   const [supporte] = useState(() => Boolean(constructeurReconnaissanceVocale()));
   const reconnaissanceRef = useRef<ReconnaissanceVocale | null>(null);
+  // Miroir de `confirmation`, lu depuis le callback onresult (défini une
+  // seule fois dans l'effet ci-dessous) : un state React resterait figé à sa
+  // valeur du premier rendu dans ce callback, la ref reste toujours à jour.
+  const confirmationRef = useRef<{ description: string; action: string; parametres: Record<string, unknown> } | null>(null);
+  useEffect(() => {
+    confirmationRef.current = confirmation;
+  }, [confirmation]);
 
   async function envoyerCommande(texte: string) {
     setEtat("traitement");
@@ -139,6 +146,28 @@ export default function AssistantVocal() {
     reconnaissance.onresult = (evenement) => {
       const texte = evenement.results[0]?.[0]?.transcript ?? "";
       setTranscript(texte);
+      if (confirmationRef.current) {
+        const normalise = texte
+          .normalize("NFD")
+          .replace(/[̀-ͯ]/g, "")
+          .toLowerCase();
+        if (/\b(confirme|confirmer|oui|valide|d'accord)\b/.test(normalise)) {
+          setEtat("inactif");
+          confirmerAction();
+          return;
+        }
+        if (/\b(annule|annuler|non)\b/.test(normalise)) {
+          setEtat("inactif");
+          annulerAction();
+          return;
+        }
+        // Ni confirmation ni annulation reconnue dans ce qui a été dit — on
+        // laisse la confirmation affichée (l'utilisateur peut réessayer ou
+        // cliquer les boutons) plutôt que de l'interpréter comme une
+        // nouvelle commande sans rapport.
+        setEtat("inactif");
+        return;
+      }
       envoyerCommande(texte);
     };
     reconnaissance.onerror = () => {
@@ -156,7 +185,9 @@ export default function AssistantVocal() {
     if (!reconnaissanceRef.current) return;
     setMessage(null);
     setResultats(null);
-    setConfirmation(null);
+    // Ne réinitialise volontairement pas `confirmation` : cliquer le micro
+    // pour dire "confirme" doit la laisser affichée le temps de traiter la
+    // réponse (voir onresult, qui la lit via confirmationRef).
     setTranscript("");
     setEtat("ecoute");
     try {
