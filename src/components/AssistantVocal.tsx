@@ -30,11 +30,17 @@ declare global {
   }
 }
 
+function constructeurReconnaissanceVocale(): (new () => ReconnaissanceVocale) | undefined {
+  if (typeof window === "undefined") return undefined;
+  return window.SpeechRecognition ?? window.webkitSpeechRecognition;
+}
+
 type EtatEcoute = "inactif" | "ecoute" | "traitement";
 
 type ReponseAssistantVocal =
   | { type: "navigation"; url: string; libelle: string }
   | { type: "resultats_patients"; personnes: { id: string; nom: string; prenom: string | null }[] }
+  | { type: "confirmation"; description: string; action: string; parametres: Record<string, unknown> }
   | { type: "message"; texte: string }
   | { erreur: string };
 
@@ -55,39 +61,15 @@ export default function AssistantVocal() {
   const [transcript, setTranscript] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [resultats, setResultats] = useState<{ id: string; nom: string; prenom: string | null }[] | null>(null);
-  const [supporte, setSupporte] = useState(true);
+  const [confirmation, setConfirmation] = useState<{ description: string; action: string; parametres: Record<string, unknown> } | null>(null);
+  const [supporte] = useState(() => Boolean(constructeurReconnaissanceVocale()));
   const reconnaissanceRef = useRef<ReconnaissanceVocale | null>(null);
-
-  useEffect(() => {
-    const Ctor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!Ctor) {
-      setSupporte(false);
-      return;
-    }
-    const reconnaissance = new Ctor();
-    reconnaissance.lang = "fr-FR";
-    reconnaissance.continuous = false;
-    reconnaissance.interimResults = false;
-    reconnaissance.onresult = (evenement) => {
-      const texte = evenement.results[0]?.[0]?.transcript ?? "";
-      setTranscript(texte);
-      envoyerCommande(texte);
-    };
-    reconnaissance.onerror = () => {
-      setEtat("inactif");
-      setMessage("Erreur de reconnaissance vocale — réessayez.");
-    };
-    reconnaissance.onend = () => {
-      setEtat((etatActuel) => (etatActuel === "ecoute" ? "inactif" : etatActuel));
-    };
-    reconnaissanceRef.current = reconnaissance;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function envoyerCommande(texte: string) {
     setEtat("traitement");
     setMessage(null);
     setResultats(null);
+    setConfirmation(null);
     try {
       const reponse = await fetch("/api/assistant-vocal", {
         method: "POST",
@@ -110,6 +92,8 @@ export default function AssistantVocal() {
         } else {
           setResultats(data.personnes);
         }
+      } else if (data.type === "confirmation") {
+        setConfirmation({ description: data.description, action: data.action, parametres: data.parametres });
       } else {
         setMessage(data.texte);
       }
@@ -120,10 +104,59 @@ export default function AssistantVocal() {
     }
   }
 
+  async function confirmerAction() {
+    if (!confirmation) return;
+    setEtat("traitement");
+    try {
+      const reponse = await fetch("/api/assistant-vocal/executer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: confirmation.action, parametres: confirmation.parametres }),
+      });
+      const data: ReponseAssistantVocal = await reponse.json();
+      setMessage(!reponse.ok || "erreur" in data ? ("erreur" in data ? data.erreur : "Erreur.") : "texte" in data ? data.texte : "Fait.");
+      router.refresh();
+    } catch {
+      setMessage("Erreur réseau.");
+    } finally {
+      setConfirmation(null);
+      setEtat("inactif");
+    }
+  }
+
+  function annulerAction() {
+    setConfirmation(null);
+    setMessage("Action annulée.");
+  }
+
+  useEffect(() => {
+    const Ctor = constructeurReconnaissanceVocale();
+    if (!Ctor) return;
+    const reconnaissance = new Ctor();
+    reconnaissance.lang = "fr-FR";
+    reconnaissance.continuous = false;
+    reconnaissance.interimResults = false;
+    reconnaissance.onresult = (evenement) => {
+      const texte = evenement.results[0]?.[0]?.transcript ?? "";
+      setTranscript(texte);
+      envoyerCommande(texte);
+    };
+    reconnaissance.onerror = () => {
+      setEtat("inactif");
+      setMessage("Erreur de reconnaissance vocale — réessayez.");
+    };
+    reconnaissance.onend = () => {
+      setEtat((etatActuel) => (etatActuel === "ecoute" ? "inactif" : etatActuel));
+    };
+    reconnaissanceRef.current = reconnaissance;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function demarrer() {
     if (!reconnaissanceRef.current) return;
     setMessage(null);
     setResultats(null);
+    setConfirmation(null);
     setTranscript("");
     setEtat("ecoute");
     try {
@@ -137,7 +170,7 @@ export default function AssistantVocal() {
 
   return (
     <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2">
-      {(message || resultats || (etat !== "inactif" && transcript)) && (
+      {(message || resultats || confirmation || (etat !== "inactif" && transcript)) && (
         <div className="max-w-xs rounded-xl border border-neutral-200 bg-white p-3 text-sm shadow-lg">
           {transcript && etat !== "inactif" && <p className="text-xs italic text-neutral-500">« {transcript} »</p>}
           {message && <p className="mt-1 text-neutral-800">{message}</p>}
@@ -154,6 +187,27 @@ export default function AssistantVocal() {
                 </li>
               ))}
             </ul>
+          )}
+          {confirmation && (
+            <div className="mt-1 flex flex-col gap-2">
+              <p className="text-neutral-800">{confirmation.description}</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={confirmerAction}
+                  disabled={etat === "traitement"}
+                  className="rounded-md bg-orange-600 px-3 py-1 text-xs font-semibold text-white hover:bg-orange-700 disabled:opacity-50"
+                >
+                  Confirmer
+                </button>
+                <button
+                  onClick={annulerAction}
+                  disabled={etat === "traitement"}
+                  className="rounded-md border border-neutral-300 px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}
