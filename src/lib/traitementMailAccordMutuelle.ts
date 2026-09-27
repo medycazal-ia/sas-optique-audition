@@ -98,6 +98,22 @@ function echapperRegex(texte: string): string {
 }
 
 /**
+ * Noms de plateformes tiers payant / mutuelles connues — à enrichir au fil
+ * de l'eau (Viamedis, puis d'autres au besoin). Sert uniquement de signal
+ * complémentaire pour confirmer qu'un mail est bien lié à une mutuelle
+ * quand la personne identifiée n'a aucune demande en attente : sans lui, un
+ * mail personnel sans rapport mentionnant par coïncidence le nom complet du
+ * patient (facture, confirmation d'achat...) serait rattaché à tort à son
+ * dossier — jamais utilisé comme critère d'identification du patient
+ * lui-même (voir patientDepuisTexte, qui reste nom+prénom uniquement).
+ */
+const PLATEFORMES_MUTUELLES_CONNUES = ["viamedis"];
+
+function contientPlateformeMutuelleConnue(texteNormalise: string): boolean {
+  return PLATEFORMES_MUTUELLES_CONNUES.some((p) => texteNormalise.includes(p));
+}
+
+/**
  * Cherche, parmi TOUS les patients du site (peu importe qu'ils aient une
  * demande en attente, déjà acceptée ou déjà refusée — un mail peut concerner
  * un dossier déjà tranché : correction, nouvelle pièce, appel d'un refus...),
@@ -239,8 +255,15 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
 
   // Document : enregistré sur le dossier dès qu'on l'a, dossier identifié —
   // qu'on puisse ou non appliquer automatiquement la transition de statut.
+  // Si la personne n'a aucune demande en attente, on exige en plus qu'une
+  // plateforme mutuelle connue soit mentionnée (voir
+  // PLATEFORMES_MUTUELLES_CONNUES) avant d'enregistrer quoi que ce soit :
+  // sans demande en attente à mettre à jour, mieux vaut ne rien enregistrer
+  // qu'attacher par erreur un mail personnel sans rapport (facture,
+  // confirmation d'achat...) au dossier médical du patient.
+  const plateformeReconnue = contientPlateformeMutuelleConnue(`${sujetNormalise} ${corpsNormalise} ${nomsFichiersNormalises}`);
   let documentEnregistre = false;
-  if (piece && contenuPiece) {
+  if (piece && contenuPiece && (demandesPersonne.length > 0 || plateformeReconnue)) {
     try {
       const { cheminStockage } = await enregistrerFichier(personneId, piece.fileName, contenuPiece);
       await prisma.document.create({ data: { personneId, type: "REPONSE_MUTUELLE", nomFichier: piece.fileName, cheminStockage } });
@@ -265,7 +288,9 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
       personneId,
       demandeId: null,
       action: documentEnregistre ? "DOCUMENT_SEUL" : null,
-      raison: "Dossier identifié mais aucune demande en attente pour cette personne (déjà acceptée/refusée, ou aucune demande) — document enregistré sur son dossier, statut non modifié.",
+      raison: documentEnregistre
+        ? "Dossier identifié mais aucune demande en attente pour cette personne (déjà acceptée/refusée, ou aucune demande) — plateforme mutuelle reconnue dans le mail, document enregistré sur son dossier, statut non modifié."
+        : "Dossier identifié mais aucune demande en attente pour cette personne, et aucune plateforme mutuelle connue mentionnée dans le mail — probablement sans rapport, document non enregistré.",
     };
   }
 
