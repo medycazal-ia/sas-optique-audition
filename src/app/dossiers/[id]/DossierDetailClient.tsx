@@ -4211,6 +4211,7 @@ function parlerPromesse(texte: string): Promise<void> {
 
 function SyntheseBesoin({ personne }: { personne: Personne }) {
   const router = useRouter();
+  const { activer } = useSurbrillance();
   const [modalOuverte, setModalOuverte] = useState(false);
   const [texte, setTexte] = useState(personne.syntheseBesoin ?? "");
   const [transcription, setTranscription] = useState(personne.transcriptionBesoin ?? "");
@@ -4395,6 +4396,47 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
     setDocumentPopup(`/dossiers/${personne.id}/audit-resultats`);
   }
 
+  /**
+   * Lien direct vers la carte Proposition : pré-remplit le devis en
+   * brouillon avec les verres suggérés (au mieux — voir
+   * lib/besoinsExprimes.ts) pendant qu'on attend le choix de la monture en
+   * magasin, puis ferme la popup et positionne la page sur cette carte pour
+   * enchaîner directement dessus.
+   */
+  async function allerVersProposition() {
+    setMessage(null);
+    await enregistrerBrouillon();
+    try {
+      const suggestions = await fetch(`/api/dossiers/${personne.id}/besoins/produits-suggeres`).then((r) => r.json());
+      if (suggestions.verres?.length > 0) {
+        const propositions = await fetch(`/api/dossiers/${personne.id}/propositions`).then((r) => r.json());
+        let proposition = propositions.find((p: { statut: string; id: string; lignes: { produitId: string }[] }) => p.statut === "BROUILLON");
+        if (!proposition) {
+          const creee = await fetch(`/api/dossiers/${personne.id}/propositions`, { method: "POST" }).then((r) => r.json());
+          proposition = { ...creee, lignes: [] };
+        }
+        const dejaPresents = new Set<string>((proposition.lignes ?? []).map((l: { produitId: string }) => l.produitId));
+        for (const verre of suggestions.verres) {
+          if (dejaPresents.has(verre.id)) continue;
+          await fetch(`/api/propositions/${proposition.id}/lignes`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ produitId: verre.id, forcerSansStock: true }),
+          });
+        }
+      }
+    } catch {
+      // Au mieux : même si la pré-suggestion échoue, on continue vers la
+      // carte proposition, qui reste modifiable manuellement.
+    }
+    setModalOuverte(false);
+    router.refresh();
+    setTimeout(() => {
+      document.getElementById(ID_CARTE_PROPOSITIONS)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      activer(ID_CARTE_PROPOSITIONS);
+    }, 300);
+  }
+
   function bascule<T extends string>(liste: T[], valeur: T, setter: (v: T[]) => void) {
     setter(liste.includes(valeur) ? liste.filter((v) => v !== valeur) : [...liste, valeur]);
   }
@@ -4449,22 +4491,30 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
         >
           📄 Voir les solutions
         </button>
+        <button
+          onClick={allerVersProposition}
+          disabled={chipsBesoins.length === 0}
+          className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+        >
+          🧾 Aller à la proposition
+        </button>
       </div>
 
       {modalOuverte && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setModalOuverte(false)}>
           <div
-            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-xl bg-white p-6 shadow-2xl"
+            className="flex h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-6 py-3">
               <span className="text-sm font-semibold text-neutral-800">Audit — {personne.prenom} {personne.nom}</span>
               <button onClick={() => setModalOuverte(false)} className="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100" title="Fermer">
                 ✕
               </button>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={enregistrement ? arreterEnregistrement : demarrerEnregistrement}
                 disabled={questionnaireActif}
@@ -4571,32 +4621,43 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
                 </div>
               </div>
             </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button
-                onClick={enregistrerBrouillon}
-                disabled={envoi !== null}
-                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
-              >
-                {envoi === "brouillon" ? "Enregistrement…" : "Enregistrer le brouillon"}
-              </button>
-
-              <button
-                onClick={valider}
-                disabled={envoi !== null || !texte.trim()}
-                className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-              >
-                {envoi === "validation" ? "Validation…" : "Valider la synthèse"}
-              </button>
-
-              <button
-                onClick={ouvrirDocumentSolutions}
-                className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50"
-              >
-                📄 Voir les solutions
-              </button>
             </div>
-            {message && <p className="mt-2 text-sm text-neutral-500">{message}</p>}
+
+            <div className="shrink-0 border-t border-neutral-200 px-6 py-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={enregistrerBrouillon}
+                  disabled={envoi !== null}
+                  className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  {envoi === "brouillon" ? "Enregistrement…" : "Enregistrer le brouillon"}
+                </button>
+
+                <button
+                  onClick={valider}
+                  disabled={envoi !== null || !texte.trim()}
+                  className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+                >
+                  {envoi === "validation" ? "Validation…" : "Valider la synthèse"}
+                </button>
+
+                <button
+                  onClick={ouvrirDocumentSolutions}
+                  className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50"
+                >
+                  📄 Voir les solutions
+                </button>
+
+                <button
+                  onClick={allerVersProposition}
+                  disabled={chipsBesoins.length === 0}
+                  className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  🧾 Aller à la proposition
+                </button>
+              </div>
+              {message && <p className="mt-2 text-sm text-neutral-500">{message}</p>}
+            </div>
           </div>
         </div>
       )}
