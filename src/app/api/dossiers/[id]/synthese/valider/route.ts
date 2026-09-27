@@ -4,6 +4,7 @@ import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
 import { enregistrerFichier } from "@/lib/stockageFichiers";
 import { genererAuditPdf } from "@/lib/auditPdf";
+import { normaliserPourNomFichier } from "@/lib/nomFichier";
 import {
   estVisionBesoin,
   estTraitementVerreBesoin,
@@ -16,17 +17,6 @@ import {
 } from "@/lib/besoinsExprimes";
 
 type RouteParams = { params: Promise<{ id: string }> };
-
-// Nettoie un composant de nom de fichier : minuscules, accents retirés,
-// tout ce qui n'est pas alphanumérique remplacé par "-".
-function normaliserPourNomFichier(valeur: string): string {
-  return valeur
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "x";
-}
 
 /**
  * POST /api/dossiers/:id/synthese/valider — validation humaine explicite,
