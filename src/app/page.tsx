@@ -77,6 +77,35 @@ export default async function AccueilPage() {
           Voir les dossiers existants
         </Link>
       </div>
+
+      {/*
+        Bloc promo pour les prospects (démo/découverte) — volontairement en
+        pied de page, séparé visuellement du reste (bordure + fond neutre),
+        pour ne pas concurrencer les cartes de l'outil au quotidien. Empilé
+        sur mobile/tablette (flex-col), côte à côte à partir de sm.
+      */}
+      <div className="mx-auto mt-4 flex w-full max-w-3xl flex-col items-center gap-6 border-t border-neutral-200 px-6 pt-8 sm:flex-row sm:justify-center sm:gap-10">
+        <Link href="/rdv-demo" className="flex flex-col items-center gap-2 text-center">
+          {/* eslint-disable-next-line @next/next/no-img-element -- image générée dynamiquement par une route API, pas un asset optimisable par next/image */}
+          <img
+            src="/api/rdv-demo/qrcode"
+            alt="QR code — RDV DEMO"
+            width={120}
+            height={120}
+            className="rounded-xl border border-neutral-200 shadow-sm transition hover:scale-105"
+          />
+          <span className="text-xs font-semibold uppercase tracking-widest text-neutral-500">RDV DEMO</span>
+        </Link>
+
+        <a
+          href="/formulaire"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-full bg-gradient-to-r from-orange-500 via-fuchsia-500 to-indigo-500 px-6 py-3 text-center text-sm font-semibold text-white shadow-lg transition hover:scale-105"
+        >
+          🔍 Je découvre FACILOG
+        </a>
+      </div>
     </main>
   );
 }

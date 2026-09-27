@@ -108,6 +108,15 @@ services:
         sync: false
       - key: TWILIO_FROM
         sync: false
+      # Page publique /rdv-demo (bouton "RDV DEMO"/QR code de la page
+      # d'accueil) — URL d'intégration ("Embed") d'un agenda Google Calendar
+      # de type "Programme de rendez-vous" (Google Calendar > Paramètres de
+      # cet agenda > Intégrer l'agenda > coller ici l'URL src de l'iframe
+      # fournie par Google). Jamais stockée dans ce fichier ni dans git. Sans
+      # cette variable, la page reste utilisable : elle affiche un message
+      # clair invitant à contacter directement plutôt qu'un agenda vide.
+      - key: GOOGLE_CALENDAR_RDV_URL
+        sync: false
 
 databases:
   - name: sas-optique-audition-db
