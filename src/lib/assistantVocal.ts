@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { creerClientAnthropic } from "@/lib/anthropicClient";
+import { declencherRechercheAccordMutuelle } from "@/lib/rechercheAccordMutuelle";
+import { repasserDemandeEnAttente } from "@/lib/repasserEnAttente";
 
 /**
  * Assistant vocal — pas de grammaire de commandes figée façon "Hey Google" :
@@ -9,7 +11,9 @@ import { creerClientAnthropic } from "@/lib/anthropicClient";
  * (voir OUTILS), laquelle correspond à la demande — jamais une exécution de
  * texte libre ou une URL construite à partir de ce que dit l'IA : chaque
  * outil ne peut produire qu'un résultat prévu à l'avance (une recherche
- * Prisma classique, ou une URL choisie dans DESTINATIONS_CONNUES).
+ * Prisma classique, une URL choisie dans DESTINATIONS_CONNUES, ou — pour les
+ * actions qui modifient des données — une demande de confirmation dont
+ * l'exécution réelle repasse par ACTIONS_CONFIRMABLES, jamais directement).
  */
 
 const MODELE = process.env.ANTHROPIC_MODELE_ASSISTANT_VOCAL ?? "claude-sonnet-5";
@@ -52,22 +56,76 @@ const OUTILS: Anthropic.Tool[] = [
       required: ["destination"],
     },
   },
+  {
+    name: "chercher_produit",
+    description:
+      "Recherche un produit du catalogue (monture, verre, lentille, appareil auditif...) par marque, modèle ou référence (ex: \"cherche le produit Ray-Ban\", \"ouvre la référence RB1234\").",
+    input_schema: {
+      type: "object",
+      properties: {
+        requete: { type: "string", description: "Marque, modèle, référence ou catégorie du produit recherché." },
+      },
+      required: ["requete"],
+    },
+  },
+  {
+    name: "chercher_fournisseur",
+    description: "Recherche un fournisseur par nom (ex: \"cherche le fournisseur Essilor\").",
+    input_schema: {
+      type: "object",
+      properties: {
+        requete: { type: "string", description: "Nom du fournisseur recherché." },
+      },
+      required: ["requete"],
+    },
+  },
+  {
+    name: "relancer_recherche_mutuelle",
+    description:
+      "Relance immédiatement la recherche automatique d'un accord/refus de mutuelle par mail pour un patient donné (équivalent du bouton \"Relancer la recherche\" sur son dossier). Ne modifie aucune donnée directement — se contente de vérifier les mails à nouveau tout de suite.",
+    input_schema: {
+      type: "object",
+      properties: {
+        patient: { type: "string", description: "Nom et/ou prénom du patient dont il faut relancer la recherche mutuelle." },
+      },
+      required: ["patient"],
+    },
+  },
+  {
+    name: "repasser_en_attente",
+    description:
+      "Remet en attente une demande de prise en charge mutuelle actuellement refusée pour un patient (équivalent du bouton \"Repasser en attente\"). Modifie une donnée — nécessite une confirmation avant d'être réellement appliquée.",
+    input_schema: {
+      type: "object",
+      properties: {
+        patient: { type: "string", description: "Nom et/ou prénom du patient dont la demande refusée doit repasser en attente." },
+      },
+      required: ["patient"],
+    },
+  },
 ];
 
 const PROMPT_SYSTEME = `Tu es l'assistant vocal du logiciel de gestion d'un magasin d'optique/audition (SAS Optique & Audition). On te donne le texte transcrit d'une phrase que l'utilisateur a dite au micro, en français — parfois imparfaitement reconnu.
 
-Choisis l'outil le plus approprié à sa demande et appelle-le avec les bons arguments. Si sa demande ne correspond à aucune action disponible pour l'instant (créer un devis, valider un accord, enregistrer un paiement, etc. — pas encore supporté à la voix), réponds par une phrase courte expliquant que cette action n'est pas encore possible à la voix, sans appeler d'outil.`;
+Choisis l'outil le plus approprié à sa demande et appelle-le avec les bons arguments. Si sa demande ne correspond à aucune action disponible pour l'instant (créer un devis, valider un accord, enregistrer un paiement, créer un nouveau dossier, etc. — pas encore supporté à la voix), réponds par une phrase courte expliquant que cette action n'est pas encore possible à la voix, sans appeler d'outil.`;
 
 export type ResultatAssistantVocal =
   | { type: "navigation"; url: string; libelle: string }
   | { type: "resultats_patients"; personnes: { id: string; nom: string; prenom: string | null }[] }
+  | { type: "confirmation"; description: string; action: string; parametres: Record<string, unknown> }
   | { type: "message"; texte: string };
 
-async function chercherPatient(requeteBrute: string): Promise<ResultatAssistantVocal> {
+/** Les seules actions qui modifient des données — jamais exécutées directement par interpreterCommandeVocale, uniquement via executerActionConfirmee après un accord explicite de l'utilisateur. */
+const ACTIONS_CONFIRMABLES = ["repasser_en_attente"] as const;
+type ActionConfirmable = (typeof ACTIONS_CONFIRMABLES)[number];
+
+function estActionConfirmable(action: string): action is ActionConfirmable {
+  return (ACTIONS_CONFIRMABLES as readonly string[]).includes(action);
+}
+
+async function rechercherPersonnes(requeteBrute: string): Promise<{ id: string; nom: string; prenom: string | null }[]> {
   const requete = requeteBrute.trim();
-  if (!requete) {
-    return { type: "message", texte: "Je n'ai pas compris le nom du patient à chercher." };
-  }
+  if (!requete) return [];
 
   const parPrefixe = await prisma.personne.findMany({
     where: {
@@ -81,9 +139,7 @@ async function chercherPatient(requeteBrute: string): Promise<ResultatAssistantV
     take: 5,
     select: { id: true, nom: true, prenom: true },
   });
-  if (parPrefixe.length > 0) {
-    return { type: "resultats_patients", personnes: parPrefixe };
-  }
+  if (parPrefixe.length > 0) return parPrefixe;
 
   // Requête à deux mots ("Malika Cazal") non trouvée en préfixe simple (ordre
   // nom/prénom inconnu, ou reconnaissance vocale ayant inversé les mots) :
@@ -100,12 +156,111 @@ async function chercherPatient(requeteBrute: string): Promise<ResultatAssistantV
       take: 5,
       select: { id: true, nom: true, prenom: true },
     });
-    if (parMots.length > 0) {
-      return { type: "resultats_patients", personnes: parMots };
-    }
+    if (parMots.length > 0) return parMots;
   }
 
-  return { type: "resultats_patients", personnes: [] };
+  return [];
+}
+
+async function chercherPatient(requeteBrute: string): Promise<ResultatAssistantVocal> {
+  if (!requeteBrute.trim()) {
+    return { type: "message", texte: "Je n'ai pas compris le nom du patient à chercher." };
+  }
+  return { type: "resultats_patients", personnes: await rechercherPersonnes(requeteBrute) };
+}
+
+async function chercherProduit(requeteBrute: string): Promise<ResultatAssistantVocal> {
+  const requete = requeteBrute.trim();
+  if (!requete) {
+    return { type: "message", texte: "Je n'ai pas compris quel produit chercher." };
+  }
+  const produits = await prisma.produit.findMany({
+    where: {
+      OR: [
+        { marque: { contains: requete, mode: "insensitive" } },
+        { modele: { contains: requete, mode: "insensitive" } },
+        { reference: { contains: requete, mode: "insensitive" } },
+        { categorie: { contains: requete, mode: "insensitive" } },
+      ],
+    },
+    take: 5,
+    select: { id: true, marque: true, modele: true },
+  });
+  if (produits.length === 0) {
+    return { type: "message", texte: `Aucun produit trouvé pour « ${requete} ».` };
+  }
+  if (produits.length === 1) {
+    return { type: "navigation", url: `/produits/${produits[0].id}`, libelle: `${produits[0].marque} ${produits[0].modele}` };
+  }
+  return { type: "navigation", url: `/produits?q=${encodeURIComponent(requete)}`, libelle: `résultats pour « ${requete} »` };
+}
+
+async function chercherFournisseur(requeteBrute: string): Promise<ResultatAssistantVocal> {
+  const requete = requeteBrute.trim();
+  if (!requete) {
+    return { type: "message", texte: "Je n'ai pas compris quel fournisseur chercher." };
+  }
+  const fournisseurs = await prisma.fournisseur.findMany({
+    where: { nom: { contains: requete, mode: "insensitive" } },
+    take: 5,
+    select: { nom: true },
+  });
+  if (fournisseurs.length === 0) {
+    return { type: "message", texte: `Aucun fournisseur trouvé pour « ${requete} ».` };
+  }
+  return { type: "navigation", url: "/fournisseurs", libelle: fournisseurs.map((f) => f.nom).join(", ") };
+}
+
+async function relancerRechercheMutuelle(patientBrut: string): Promise<ResultatAssistantVocal> {
+  const personnes = await rechercherPersonnes(patientBrut);
+  if (personnes.length === 0) {
+    return { type: "message", texte: `Aucun patient trouvé pour « ${patientBrut} ».` };
+  }
+  if (personnes.length > 1) {
+    return { type: "resultats_patients", personnes };
+  }
+  const personne = personnes[0];
+  const resultat = await declencherRechercheAccordMutuelle(personne.id);
+  if (!resultat.ok) {
+    return { type: "message", texte: resultat.erreur };
+  }
+  const nomComplet = [personne.prenom, personne.nom].filter(Boolean).join(" ");
+  return {
+    type: "message",
+    texte: resultat.declenche
+      ? `Recherche relancée pour ${nomComplet}.`
+      : `Recherche non déclenchée pour ${nomComplet} — vérifiez les boîtes mail configurées.`,
+  };
+}
+
+async function demanderConfirmationRepasserEnAttente(patientBrut: string): Promise<ResultatAssistantVocal> {
+  const personnes = await rechercherPersonnes(patientBrut);
+  if (personnes.length === 0) {
+    return { type: "message", texte: `Aucun patient trouvé pour « ${patientBrut} ».` };
+  }
+  if (personnes.length > 1) {
+    return { type: "resultats_patients", personnes };
+  }
+  const personne = personnes[0];
+  const demandesRefusees = await prisma.demandePriseEnCharge.findMany({
+    where: { personneId: personne.id, statut: "REFUS" },
+  });
+  const nomComplet = [personne.prenom, personne.nom].filter(Boolean).join(" ");
+  if (demandesRefusees.length === 0) {
+    return { type: "message", texte: `${nomComplet} n'a aucune demande refusée à remettre en attente.` };
+  }
+  if (demandesRefusees.length > 1) {
+    return {
+      type: "message",
+      texte: `${nomComplet} a plusieurs demandes refusées — ouvrez son dossier pour choisir laquelle remettre en attente.`,
+    };
+  }
+  return {
+    type: "confirmation",
+    description: `Remettre en attente la demande refusée de ${nomComplet} ?`,
+    action: "repasser_en_attente",
+    parametres: { demandeId: demandesRefusees[0].id },
+  };
 }
 
 export async function interpreterCommandeVocale(texte: string): Promise<ResultatAssistantVocal> {
@@ -132,19 +287,49 @@ export async function interpreterCommandeVocale(texte: string): Promise<Resultat
     };
   }
 
-  if (blocOutil.name === "naviguer") {
-    const destination = (blocOutil.input as { destination?: string }).destination ?? "";
-    const url = DESTINATIONS_CONNUES[destination];
-    if (!url) {
-      return { type: "message", texte: "Destination non reconnue." };
+  switch (blocOutil.name) {
+    case "naviguer": {
+      const destination = (blocOutil.input as { destination?: string }).destination ?? "";
+      const url = DESTINATIONS_CONNUES[destination];
+      return url ? { type: "navigation", url, libelle: destination } : { type: "message", texte: "Destination non reconnue." };
     }
-    return { type: "navigation", url, libelle: destination };
+    case "chercher_patient":
+      return chercherPatient((blocOutil.input as { requete?: string }).requete ?? "");
+    case "chercher_produit":
+      return chercherProduit((blocOutil.input as { requete?: string }).requete ?? "");
+    case "chercher_fournisseur":
+      return chercherFournisseur((blocOutil.input as { requete?: string }).requete ?? "");
+    case "relancer_recherche_mutuelle":
+      return relancerRechercheMutuelle((blocOutil.input as { patient?: string }).patient ?? "");
+    case "repasser_en_attente":
+      return demanderConfirmationRepasserEnAttente((blocOutil.input as { patient?: string }).patient ?? "");
+    default:
+      return { type: "message", texte: "Commande non reconnue." };
   }
+}
 
-  if (blocOutil.name === "chercher_patient") {
-    const requete = (blocOutil.input as { requete?: string }).requete ?? "";
-    return chercherPatient(requete);
+/**
+ * Exécute réellement une action confirmable — jamais appelée directement
+ * depuis interpreterCommandeVocale, uniquement après que l'utilisateur a
+ * explicitement validé la confirmation renvoyée (voir components/AssistantVocal.tsx
+ * et /api/assistant-vocal/executer). Revalide tout côté serveur (le client
+ * ne fait que renvoyer ce que le serveur lui a lui-même proposé, mais on ne
+ * lui fait pas confiance pour autant).
+ */
+export async function executerActionConfirmee(action: string, parametres: unknown, acteur?: string): Promise<ResultatAssistantVocal> {
+  if (!estActionConfirmable(action)) {
+    return { type: "message", texte: "Action non reconnue ou non confirmable." };
   }
-
-  return { type: "message", texte: "Commande non reconnue." };
+  if (action === "repasser_en_attente") {
+    const demandeId = (parametres as { demandeId?: string } | null)?.demandeId;
+    if (typeof demandeId !== "string" || !demandeId) {
+      return { type: "message", texte: "Paramètres invalides." };
+    }
+    const resultat = await repasserDemandeEnAttente(demandeId, acteur);
+    if (!resultat.ok) {
+      return { type: "message", texte: resultat.erreur };
+    }
+    return { type: "message", texte: "Demande remise en attente." };
+  }
+  return { type: "message", texte: "Action non reconnue." };
 }
