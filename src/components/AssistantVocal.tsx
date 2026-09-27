@@ -119,7 +119,9 @@ export default function AssistantVocal() {
           parler(texte);
         } else if (data.personnes.length === 1) {
           const p = data.personnes[0];
-          const texte = `Ouverture du dossier de ${[p.prenom, p.nom].filter(Boolean).join(" ")}`;
+          // Volontairement générique, sans nom ni prénom : dit/affiché dans un
+          // magasin, à portée d'oreille d'autres clients — voir lib/assistantVocal.ts.
+          const texte = "Dossier ouvert.";
           setMessage(texte);
           parler(texte);
           router.push(`/dossiers/${p.id}`);
