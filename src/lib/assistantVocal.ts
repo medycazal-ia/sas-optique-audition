@@ -31,11 +31,15 @@ const OUTILS: Anthropic.Tool[] = [
   {
     name: "chercher_patient",
     description:
-      "Recherche un patient par nom, prénom ou numéro de sécurité sociale pour ouvrir son dossier. À utiliser dès que l'utilisateur nomme une personne (ex: \"ouvre le dossier de Malika Cazal\", \"cherche Dupont\", \"trouve-moi le dossier de Medy\").",
+      "Recherche un patient par nom, prénom ou numéro de sécurité sociale pour ouvrir son dossier. À utiliser dès que l'utilisateur nomme une personne (ex: \"ouvre le dossier de Malika Cazal\", \"cherche Dupont\", \"cherche Malika Cazal\", \"trouve-moi le dossier de Medy\").",
     input_schema: {
       type: "object",
       properties: {
-        requete: { type: "string", description: "Nom, prénom, ou numéro de sécurité sociale du patient recherché." },
+        requete: {
+          type: "string",
+          description:
+            "Nom et/ou prénom (ou numéro de sécurité sociale) du patient recherché, transmis EN ENTIER exactement comme dit — si l'utilisateur donne le prénom ET le nom (ex: \"Malika Cazal\"), transmettre les deux ensemble, jamais seulement le nom de famille.",
+        },
       },
       required: ["requete"],
     },
@@ -298,10 +302,25 @@ async function demanderConfirmationRepasserEnAttente(patientBrut: string): Promi
  */
 const MOTIF_DOSSIER_DE = /\bdossiers?\s+d['e]\s*(.+)/i;
 
+/**
+ * Même principe pour "cherche X" / "trouve(-moi) X" (sans le mot "dossier") :
+ * constaté en production, quand X contient prénom ET nom ("cherche Malika
+ * Cazal"), l'IA a tendance à ne transmettre que le nom de famille à l'outil
+ * chercher_patient au lieu de la requête complète — recherche alors trop
+ * étroite (elle listait tous les Cazal au lieu d'ouvrir directement le bon
+ * dossier). On exclut les formulations qui visent clairement un autre outil
+ * (produit, fournisseur) pour ne pas leur voler la main.
+ */
+const MOTIF_CHERCHE_PATIENT = /^(?:cherche|trouve)(?:z|-moi)?\s+(?!.*\b(?:produit|référence|fournisseur|marque|modèle)\b)(.+)/i;
+
 export async function interpreterCommandeVocale(texte: string): Promise<ResultatAssistantVocal> {
   const motifDossier = texte.match(MOTIF_DOSSIER_DE);
   if (motifDossier) {
     return chercherPatient(motifDossier[1]);
+  }
+  const motifCherche = texte.match(MOTIF_CHERCHE_PATIENT);
+  if (motifCherche) {
+    return chercherPatient(motifCherche[1]);
   }
 
   const cleApi = process.env.ANTHROPIC_API_KEY;
