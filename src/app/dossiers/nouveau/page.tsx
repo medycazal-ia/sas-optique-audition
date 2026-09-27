@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 export default function NouveauDossierPage() {
+  return (
+    <Suspense>
+      <NouveauDossierFormulaire />
+    </Suspense>
+  );
+}
+
+function NouveauDossierFormulaire() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -96,6 +105,7 @@ export default function NouveauDossierPage() {
             <input
               name="prenom"
               required
+              defaultValue={searchParams.get("prenom") ?? ""}
               className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
             />
           </label>
@@ -104,6 +114,7 @@ export default function NouveauDossierPage() {
             <input
               name="nom"
               required
+              defaultValue={searchParams.get("nom") ?? ""}
               className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
             />
           </label>
