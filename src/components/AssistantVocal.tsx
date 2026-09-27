@@ -35,6 +35,25 @@ function constructeurReconnaissanceVocale(): (new () => ReconnaissanceVocale) | 
   return window.SpeechRecognition ?? window.webkitSpeechRecognition;
 }
 
+/**
+ * Fait parler le navigateur (Web Speech API — synthèse, gratuite, aucun
+ * appel serveur) : pour que l'assistant pose lui-même une question
+ * ("Confirmer ?") plutôt que de se contenter d'afficher du texte. `onFin`
+ * sert à enchaîner une nouvelle écoute juste après (dialogue question →
+ * réponse), jamais appelé si la synthèse vocale n'est pas disponible.
+ */
+function parler(texte: string, onFin?: () => void) {
+  if (typeof window === "undefined" || !window.speechSynthesis) {
+    onFin?.();
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const enonce = new SpeechSynthesisUtterance(texte);
+  enonce.lang = "fr-FR";
+  if (onFin) enonce.onend = () => onFin();
+  window.speechSynthesis.speak(enonce);
+}
+
 type EtatEcoute = "inactif" | "ecoute" | "traitement";
 
 type ReponseAssistantVocal =
@@ -85,27 +104,42 @@ export default function AssistantVocal() {
       });
       const data: ReponseAssistantVocal = await reponse.json();
       if (!reponse.ok || "erreur" in data) {
-        setMessage("erreur" in data ? data.erreur : "Erreur.");
+        const texte = "erreur" in data ? data.erreur : "Erreur.";
+        setMessage(texte);
+        parler(texte);
       } else if (data.type === "navigation") {
-        setMessage(`Ouverture : ${data.libelle}`);
+        const texte = `Ouverture : ${data.libelle}`;
+        setMessage(texte);
+        parler(texte);
         router.push(data.url);
       } else if (data.type === "resultats_patients") {
         if (data.personnes.length === 0) {
-          setMessage("Aucun patient trouvé.");
+          const texte = "Aucun patient trouvé.";
+          setMessage(texte);
+          parler(texte);
         } else if (data.personnes.length === 1) {
           const p = data.personnes[0];
-          setMessage(`Ouverture du dossier de ${[p.prenom, p.nom].filter(Boolean).join(" ")}`);
+          const texte = `Ouverture du dossier de ${[p.prenom, p.nom].filter(Boolean).join(" ")}`;
+          setMessage(texte);
+          parler(texte);
           router.push(`/dossiers/${p.id}`);
         } else {
           setResultats(data.personnes);
+          parler("Plusieurs patients trouvés — choisissez dans la liste.");
         }
       } else if (data.type === "confirmation") {
         setConfirmation({ description: data.description, action: data.action, parametres: data.parametres });
+        // Enchaîne une écoute juste après avoir posé la question, pour un
+        // vrai dialogue question → réponse sans reclic sur le micro.
+        parler(data.description, () => demarrer());
       } else {
         setMessage(data.texte);
+        parler(data.texte);
       }
     } catch {
-      setMessage("Erreur réseau.");
+      const texte = "Erreur réseau.";
+      setMessage(texte);
+      parler(texte);
     } finally {
       setEtat("inactif");
     }
@@ -121,10 +155,14 @@ export default function AssistantVocal() {
         body: JSON.stringify({ action: confirmation.action, parametres: confirmation.parametres }),
       });
       const data: ReponseAssistantVocal = await reponse.json();
-      setMessage(!reponse.ok || "erreur" in data ? ("erreur" in data ? data.erreur : "Erreur.") : "texte" in data ? data.texte : "Fait.");
+      const texte = !reponse.ok || "erreur" in data ? ("erreur" in data ? data.erreur : "Erreur.") : "texte" in data ? data.texte : "Fait.";
+      setMessage(texte);
+      parler(texte);
       router.refresh();
     } catch {
-      setMessage("Erreur réseau.");
+      const texte = "Erreur réseau.";
+      setMessage(texte);
+      parler(texte);
     } finally {
       setConfirmation(null);
       setEtat("inactif");
@@ -134,6 +172,7 @@ export default function AssistantVocal() {
   function annulerAction() {
     setConfirmation(null);
     setMessage("Action annulée.");
+    parler("Action annulée.");
   }
 
   useEffect(() => {
@@ -166,6 +205,7 @@ export default function AssistantVocal() {
         // cliquer les boutons) plutôt que de l'interpréter comme une
         // nouvelle commande sans rapport.
         setEtat("inactif");
+        parler("Dites confirme ou annule.", () => demarrer());
         return;
       }
       envoyerCommande(texte);
