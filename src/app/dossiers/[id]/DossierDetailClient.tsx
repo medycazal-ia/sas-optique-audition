@@ -4223,6 +4223,9 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
   const [enregistrement, setEnregistrement] = useState(false);
   const [questionnaireActif, setQuestionnaireActif] = useState(false);
   const [modeMuet, setModeMuet] = useState(false);
+  // La popup a besoin de bien plus de place pendant la conversation elle-même
+  // (chips, textarea, boutons...) que le reste du temps — voir tailleClasses.
+  const [pleinEcran, setPleinEcran] = useState(false);
   const [envoi, setEnvoi] = useState<"brouillon" | "validation" | "extraction" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [documentPopup, setDocumentPopup] = useState<string | null>(null);
@@ -4280,6 +4283,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
     reconnaissanceRef.current = reconnaissance;
     enregistrementActifRef.current = true;
     setEnregistrement(true);
+    setPleinEcran(true);
     setMessage(null);
     reconnaissance.start();
   }
@@ -4290,11 +4294,37 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
     setEnregistrement(false);
   }
 
-  async function extraireBesoins(texteAAnalyser?: string) {
+  /**
+   * Ferme la popup Audit en la repositionnant sur la carte du même nom, pour
+   * que les autres boutons de la page (Voir les solutions, Aller à la
+   * proposition…) redeviennent accessibles sans devoir fermer la popup à la
+   * main au préalable.
+   */
+  function revenirALaCarteAudit() {
+    setModalOuverte(false);
+    setTimeout(() => {
+      document.getElementById(ID_CARTE_SYNTHESE_BESOIN)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      activer(ID_CARTE_SYNTHESE_BESOIN);
+    }, 300);
+  }
+
+  /**
+   * Retourne les besoins extraits (pour un enchaînement immédiat vers
+   * l'enregistrement/la validation sans attendre le prochain rendu — l'état
+   * React mis à jour via setTexte/setVision/etc. ne serait pas encore visible
+   * dans ce même appel), ou null si l'extraction n'a pas abouti.
+   */
+  async function extraireBesoins(texteAAnalyser?: string): Promise<{
+    syntheseBesoin: string;
+    visionBesoin: VisionBesoin | null;
+    traitementsVerreBesoin: TraitementVerreBesoin[];
+    matiereMontureBesoin: MatiereMontureBesoin | null;
+    styleBesoin: StyleBesoin[];
+  } | null> {
     const source = texteAAnalyser ?? transcription;
     if (!source.trim()) {
       setMessage("Aucune transcription à analyser — enregistrez d'abord la conversation.");
-      return;
+      return null;
     }
     setEnvoi("extraction");
     setMessage(null);
@@ -4307,16 +4337,25 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
       const data = await reponse.json();
       if (!reponse.ok) {
         setMessage(data.erreur ?? "Erreur lors de l'extraction.");
-        return;
+        return null;
       }
-      setTexte(data.syntheseBesoin ?? "");
-      setVision(data.visionBesoin ?? null);
-      setTraitements(data.traitementsVerreBesoin ?? []);
-      setMatiere(data.matiereMontureBesoin ?? null);
-      setStyle(data.styleBesoin ?? []);
+      const extrait = {
+        syntheseBesoin: data.syntheseBesoin ?? "",
+        visionBesoin: (data.visionBesoin ?? null) as VisionBesoin | null,
+        traitementsVerreBesoin: (data.traitementsVerreBesoin ?? []) as TraitementVerreBesoin[],
+        matiereMontureBesoin: (data.matiereMontureBesoin ?? null) as MatiereMontureBesoin | null,
+        styleBesoin: (data.styleBesoin ?? []) as StyleBesoin[],
+      };
+      setTexte(extrait.syntheseBesoin);
+      setVision(extrait.visionBesoin);
+      setTraitements(extrait.traitementsVerreBesoin);
+      setMatiere(extrait.matiereMontureBesoin);
+      setStyle(extrait.styleBesoin);
       setMessage("Besoins extraits — relisez et corrigez avant d'enregistrer.");
+      return extrait;
     } catch {
       setMessage("Erreur réseau lors de l'extraction.");
+      return null;
     } finally {
       setEnvoi(null);
     }
@@ -4343,6 +4382,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
       return;
     }
     setQuestionnaireActif(true);
+    setPleinEcran(true);
     let historique = "";
     await parlerPromesse(
       "Bonjour, je voudrais discuter avec vous de vos besoins en termes de lunettes et de vos attentes. " +
@@ -4357,41 +4397,84 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
     }
     await parlerPromesse("Merci, j'ai bien noté vos réponses.");
     setQuestionnaireActif(false);
-    await extraireBesoins((transcription ? `${transcription}\n\n` : "") + historique.trim());
+    setPleinEcran(false);
+    const transcriptionComplete = (transcription ? `${transcription}\n\n` : "") + historique.trim();
+    const extrait = await extraireBesoins(transcriptionComplete);
+    if (extrait) {
+      await finaliserApresConversation(extrait, transcriptionComplete);
+    }
   }
 
   /**
    * Arrête l'écoute en cours. En mode muet, ce bouton *est* la fin de la
    * conversation menée par l'utilisateur — on enchaîne donc directement sur
-   * l'extraction des besoins, comme à la fin du questionnaire parlé. Hors
-   * mode muet, c'est un simple arrêt d'un enregistrement libre (comportement
-   * inchangé) : l'extraction reste un geste volontaire séparé.
+   * l'extraction des besoins puis, si elle aboutit, sur l'enregistrement et
+   * la création du PDF (voir finaliserApresConversation), comme à la fin du
+   * questionnaire parlé. Hors mode muet, c'est un simple arrêt d'un
+   * enregistrement libre (comportement inchangé) : l'extraction reste un
+   * geste volontaire séparé.
    */
   async function arreterConversation() {
     arreterEnregistrement();
+    setPleinEcran(false);
     if (modeMuet) {
-      await extraireBesoins();
+      const extrait = await extraireBesoins();
+      if (extrait) {
+        await finaliserApresConversation(extrait, transcription);
+      }
     }
   }
 
-  async function enregistrerBrouillon() {
+  async function enregistrerBrouillon(donnees?: {
+    syntheseBesoin: string;
+    transcriptionBesoin: string;
+    visionBesoin: VisionBesoin | null;
+    traitementsVerreBesoin: TraitementVerreBesoin[];
+    matiereMontureBesoin: MatiereMontureBesoin | null;
+    styleBesoin: StyleBesoin[];
+  }) {
     setEnvoi("brouillon");
     setMessage(null);
     await fetch(`/api/dossiers/${personne.id}/synthese`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        syntheseBesoin: texte,
-        transcriptionBesoin: transcription,
-        visionBesoin: vision,
-        traitementsVerreBesoin: traitements,
-        matiereMontureBesoin: matiere,
-        styleBesoin: style,
-      }),
+      body: JSON.stringify(
+        donnees ?? {
+          syntheseBesoin: texte,
+          transcriptionBesoin: transcription,
+          visionBesoin: vision,
+          traitementsVerreBesoin: traitements,
+          matiereMontureBesoin: matiere,
+          styleBesoin: style,
+        },
+      ),
     });
     setEnvoi(null);
     setMessage("Brouillon enregistré — validation humaine requise avant d'être acté.");
     router.refresh();
+  }
+
+  /**
+   * À la fermeture de la conversation (fin du questionnaire parlé, ou clic
+   * sur "Terminer l'audit" en mode muet), le résumé est considéré comme fait
+   * : on l'enregistre puis on le valide aussitôt, ce qui génère le PDF et
+   * l'ajoute aux documents du dossier sans étape manuelle supplémentaire.
+   * Reçoit les besoins fraîchement extraits en paramètre plutôt que de lire
+   * l'état React (texte/vision/…), qui ne serait pas encore à jour dans ce
+   * même appel — voir extraireBesoins.
+   */
+  async function finaliserApresConversation(
+    extrait: {
+      syntheseBesoin: string;
+      visionBesoin: VisionBesoin | null;
+      traitementsVerreBesoin: TraitementVerreBesoin[];
+      matiereMontureBesoin: MatiereMontureBesoin | null;
+      styleBesoin: StyleBesoin[];
+    },
+    transcriptionAEnregistrer: string,
+  ) {
+    await enregistrerBrouillon({ ...extrait, transcriptionBesoin: transcriptionAEnregistrer });
+    await valider();
   }
 
   async function valider() {
@@ -4423,11 +4506,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
    */
   async function enregistrerBrouillonEtFermer() {
     await enregistrerBrouillon();
-    setModalOuverte(false);
-    setTimeout(() => {
-      document.getElementById(ID_CARTE_SYNTHESE_BESOIN)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-      activer(ID_CARTE_SYNTHESE_BESOIN);
-    }, 300);
+    revenirALaCarteAudit();
   }
 
   /**
@@ -4560,14 +4639,39 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
       {modalOuverte && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setModalOuverte(false)}>
           <div
-            className="flex h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            className={`flex flex-col overflow-hidden rounded-xl bg-white shadow-2xl transition-all duration-300 ${
+              // Pendant la conversation elle-même, la popup a besoin de bien
+              // plus de place (chips, textarea, boutons…) que le reste du
+              // temps — voir demarrerEnregistrement/lancerQuestionnaire pour
+              // l'agrandissement, et arreterConversation pour le retour à la
+              // taille normale.
+              pleinEcran ? "h-[95vh] w-[95vw] max-w-6xl" : "h-[90vh] w-full max-w-3xl"
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-6 py-3">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-neutral-200 px-6 py-3">
               <span className="text-sm font-semibold text-neutral-800">Audit — {personne.prenom} {personne.nom}</span>
-              <button onClick={() => setModalOuverte(false)} className="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100" title="Fermer">
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                {pleinEcran && (
+                  <button
+                    onClick={() => setPleinEcran(false)}
+                    className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
+                    title="Revenir à la taille normale"
+                  >
+                    🔲 Réduire
+                  </button>
+                )}
+                <button
+                  onClick={revenirALaCarteAudit}
+                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50"
+                  title="Fermer et revenir à la carte Audit"
+                >
+                  ↩️ Revenir à la carte
+                </button>
+                <button onClick={() => setModalOuverte(false)} className="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100" title="Fermer">
+                  ✕
+                </button>
+              </div>
             </div>
 
             {enregistrement && (
