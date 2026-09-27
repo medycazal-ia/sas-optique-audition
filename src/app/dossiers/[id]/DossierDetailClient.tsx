@@ -4403,11 +4403,31 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
     });
     setEnvoi(null);
     if (reponse.ok) {
-      setMessage("Synthèse validée et actée dans le dossier.");
+      // Le PDF vient d'être créé côté serveur à partir de cette conversation
+      // (voir route valider) — la transcription brute y est effacée en base ;
+      // on l'efface aussi ici pour ne pas la voir réapparaître au prochain
+      // audit de ce même client.
+      setTranscription("");
+      setMessage("Synthèse validée et actée dans le dossier. Un PDF a été ajouté aux documents.");
       router.refresh();
     } else {
       setMessage("Erreur lors de la validation.");
     }
+  }
+
+  /**
+   * Enregistre le brouillon puis ferme la popup en repositionnant la page
+   * sur la carte Audit elle-même — sans quoi les boutons "Voir les
+   * solutions" / "Aller à la proposition" du reste de la page restent
+   * inaccessibles derrière la popup encore ouverte.
+   */
+  async function enregistrerBrouillonEtFermer() {
+    await enregistrerBrouillon();
+    setModalOuverte(false);
+    setTimeout(() => {
+      document.getElementById(ID_CARTE_SYNTHESE_BESOIN)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      activer(ID_CARTE_SYNTHESE_BESOIN);
+    }, 300);
   }
 
   /**
@@ -4550,6 +4570,18 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
               </button>
             </div>
 
+            {enregistrement && (
+              // Flotte au-dessus du contenu défilable : sans ça, ce bouton
+              // pouvait sortir de l'écran pendant la conversation et devenir
+              // impossible à atteindre pour y mettre fin "au vol".
+              <button
+                onClick={arreterConversation}
+                className="fixed bottom-6 right-6 z-[65] animate-pulse rounded-full bg-red-500 px-5 py-3 text-sm font-semibold text-white shadow-2xl hover:bg-red-600"
+              >
+                {modeMuet ? "⏹ Terminer l'audit" : "⏹ Arrêter l'enregistrement"}
+              </button>
+            )}
+
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
             {modeMuet && (
               <p className="mb-2 rounded-md bg-fuchsia-50 px-3 py-2 text-xs font-medium text-fuchsia-800">
@@ -4676,7 +4708,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
             <div className="shrink-0 border-t border-neutral-200 px-6 py-3">
               <div className="flex flex-wrap items-center gap-3">
                 <button
-                  onClick={enregistrerBrouillon}
+                  onClick={enregistrerBrouillonEtFermer}
                   disabled={envoi !== null}
                   className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
                 >

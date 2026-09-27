@@ -36,7 +36,10 @@ function normaliserPourNomFichier(valeur: string): string {
  *
  * Génère aussi un PDF de la synthèse et l'archive parmi les documents du
  * dossier (type SYNTHESE_BESOIN), nommé nom-prenom-date-propal.pdf — point
- * de départ tracé de la proposition commerciale.
+ * de départ tracé de la proposition commerciale. La transcription brute est
+ * effacée à ce moment-là : une fois actée dans le PDF et les critères
+ * structurés, elle n'a plus lieu de traîner et polluer une prochaine
+ * conversation avec ce client.
  */
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   const session = await lireSession();
@@ -51,6 +54,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     data: {
       syntheseBesoinValideeA: maintenant,
       syntheseBesoinValideePar: `${session.nom} <${session.email}>`,
+      transcriptionBesoin: null,
     },
   });
 
