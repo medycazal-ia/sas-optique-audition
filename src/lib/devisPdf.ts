@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { ModeleDocument } from "@prisma/client";
 import { dessinerEntete, dessinerPiedDePage } from "@/lib/pdfCommun";
 import { formaterCorrectionVerreParOeil, type CorrectionVerre } from "@/lib/correctionVerre";
+import { montantLigneApresRemise } from "@/lib/remiseProposition";
 
 /**
  * Génère un devis imprimable — pour un client qui préfère signer sur
@@ -21,7 +22,14 @@ export async function genererDevisPdf(params: {
   prenom: string;
   nom: string;
   creeA: Date;
-  lignes: { libelle: string; description?: string | null; correction?: CorrectionVerre | null; quantite: number; prixUnitaireTTC: number }[];
+  lignes: {
+    libelle: string;
+    description?: string | null;
+    correction?: CorrectionVerre | null;
+    quantite: number;
+    prixUnitaireTTC: number;
+    remisePourcent?: number | null;
+  }[];
   normalise?: boolean;
   modele?: ModeleDocument | null;
 }): Promise<Uint8Array> {
@@ -66,13 +74,17 @@ export async function genererDevisPdf(params: {
 
   let total = 0;
   for (const ligne of params.lignes) {
-    const totalLigne = ligne.prixUnitaireTTC * ligne.quantite;
+    const totalLigne = montantLigneApresRemise(ligne);
     total += totalLigne;
     page.drawText(ligne.libelle.slice(0, 55), { x: marge, y, size: 10, font: police });
     page.drawText(String(ligne.quantite), { x: marge + largeur - 160, y, size: 10, font: police });
     page.drawText(formaterPrix(ligne.prixUnitaireTTC), { x: marge + largeur - 120, y, size: 10, font: police });
     page.drawText(formaterPrix(totalLigne), { x: marge + largeur - 40, y, size: 10, font: police });
     y -= 14;
+    if (ligne.remisePourcent) {
+      page.drawText(`Remise ${ligne.remisePourcent} %`, { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
+      y -= 14;
+    }
     if (ligne.description) {
       page.drawText(ligne.description.slice(0, 90), { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
       y -= 14;

@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { ModeleDocument } from "@prisma/client";
 import { dessinerEntete, dessinerPiedDePage } from "@/lib/pdfCommun";
 import { formaterCorrectionVerreParOeil, type CorrectionVerre } from "@/lib/correctionVerre";
+import { montantLigneApresRemise } from "@/lib/remiseProposition";
 
 /** Génère une facture imprimable (carte Facturation & financement) — voir carte Super Admin pour configurer l'en-tête/pied de page. */
 export async function genererFacturePdf(params: {
@@ -9,7 +10,14 @@ export async function genererFacturePdf(params: {
   nom: string;
   creeA: Date;
   montantTTC: number;
-  lignes: { libelle: string; description?: string | null; correction?: CorrectionVerre | null; quantite: number; prixUnitaireTTC: number | null }[];
+  lignes: {
+    libelle: string;
+    description?: string | null;
+    correction?: CorrectionVerre | null;
+    quantite: number;
+    prixUnitaireTTC: number | null;
+    remisePourcent?: number | null;
+  }[];
   modele?: ModeleDocument | null;
 }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -42,12 +50,16 @@ export async function genererFacturePdf(params: {
 
   for (const ligne of params.lignes) {
     const prixUnitaire = ligne.prixUnitaireTTC ?? 0;
-    const totalLigne = prixUnitaire * ligne.quantite;
+    const totalLigne = montantLigneApresRemise({ prixUnitaireTTC: prixUnitaire, quantite: ligne.quantite, remisePourcent: ligne.remisePourcent });
     page.drawText(ligne.libelle.slice(0, 55), { x: marge, y, size: 10, font: police });
     page.drawText(String(ligne.quantite), { x: marge + largeur - 160, y, size: 10, font: police });
     page.drawText(formaterPrix(prixUnitaire), { x: marge + largeur - 120, y, size: 10, font: police });
     page.drawText(formaterPrix(totalLigne), { x: marge + largeur - 40, y, size: 10, font: police });
     y -= 14;
+    if (ligne.remisePourcent) {
+      page.drawText(`Remise ${ligne.remisePourcent} %`, { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
+      y -= 14;
+    }
     if (ligne.description) {
       page.drawText(ligne.description.slice(0, 90), { x: marge, y, size: 8, font: police, color: rgb(0.45, 0.45, 0.45) });
       y -= 14;

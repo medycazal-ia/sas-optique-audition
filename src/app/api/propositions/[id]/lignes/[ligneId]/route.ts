@@ -3,17 +3,22 @@ import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
 import { validerCorrectionVerre } from "@/lib/correctionVerre";
+import { estRemiseAutorisee, REMISES_AUTORISEES } from "@/lib/remiseProposition";
 
 type RouteParams = { params: Promise<{ id: string; ligneId: string }> };
 
 /**
  * PATCH /api/propositions/:id/lignes/:ligneId — corrige la correction
- * optique (catégorie VERRE) d'une ligne. Contrairement au reste de la
- * ligne (prix, quantité — figés une fois la proposition envoyée), la
- * correction reste modifiable quel que soit le statut : ce n'est pas un
- * engagement commercial mais une donnée factuelle, qui peut avoir besoin
- * d'être rectifiée après coup (erreur de saisie, correction reçue du
+ * optique (catégorie VERRE) et/ou la remise d'une ligne.
+ *
+ * La correction optique reste modifiable quel que soit le statut : ce n'est
+ * pas un engagement commercial mais une donnée factuelle, qui peut avoir
+ * besoin d'être rectifiée après coup (erreur de saisie, correction reçue du
  * laboratoire différente de la prescription).
+ *
+ * La remise, elle, est un engagement commercial (comme le prix) : modifiable
+ * uniquement tant que la proposition est en brouillon — même règle que
+ * l'ajout/retrait de lignes (voir POST/DELETE ci-contre).
  */
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const session = await lireSession();
@@ -30,7 +35,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 
   const correction = validerCorrectionVerre(body);
-  const ligneMaj = await prisma.propositionLigne.update({ where: { id: ligneId }, data: correction });
+  const donnees: Record<string, unknown> = { ...correction };
+
+  if ("remisePourcent" in body) {
+    if (proposition.statut !== "BROUILLON") {
+      return NextResponse.json({ erreur: "Seule une proposition en brouillon peut voir sa remise modifiée." }, { status: 409 });
+    }
+    const remisePourcent = body.remisePourcent;
+    if (remisePourcent !== null && !estRemiseAutorisee(remisePourcent)) {
+      return NextResponse.json(
+        { erreur: `remisePourcent doit être null ou l'un de : ${REMISES_AUTORISEES.join(", ")}.` },
+        { status: 400 },
+      );
+    }
+    donnees.remisePourcent = remisePourcent;
+  }
+
+  const ligneMaj = await prisma.propositionLigne.update({ where: { id: ligneId }, data: donnees });
 
   await journaliser({
     type: "proposition.ligne_correction_modifiee",
@@ -38,7 +59,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     entiteId: ligneId,
     personneId: proposition.personneId,
     acteur: session?.email,
-    donnees: correction,
+    donnees,
   });
 
   return NextResponse.json(ligneMaj);

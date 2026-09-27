@@ -66,6 +66,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           cylindreOG: l.cylindreOG,
           axeOG: l.axeOG,
           additionOG: l.additionOG,
+          remisePourcent: l.remisePourcent,
         })),
       },
     },

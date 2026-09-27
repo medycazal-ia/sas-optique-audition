@@ -4,6 +4,7 @@ import { creerClientAnthropic } from "@/lib/anthropicClient";
 import { declencherRechercheAccordMutuelle } from "@/lib/rechercheAccordMutuelle";
 import { repasserDemandeEnAttente } from "@/lib/repasserEnAttente";
 import { journaliser } from "@/lib/evenements";
+import { REMISES_AUTORISEES, estRemiseAutorisee } from "@/lib/remiseProposition";
 
 /**
  * Assistant vocal — pas de grammaire de commandes figée façon "Hey Google" :
@@ -157,6 +158,23 @@ const OUTILS: Anthropic.Tool[] = [
       required: ["patient", "champ", "valeur"],
     },
   },
+  {
+    name: "appliquer_remise_devis",
+    description:
+      "Applique une remise en pourcentage sur le devis en brouillon d'un patient — sur tout le devis, ou sur un seul produit si précisé (ex: \"mets 20% de remise sur le devis de Malika Cazal\", \"une remise de 50% sur la monture de Dupont\"). Uniquement les paliers 10, 20, 30, 50 ou 100%. Modifie une donnée — nécessite une confirmation avant d'être réellement appliqué. Ne fonctionne que sur un devis encore en brouillon (pas déjà envoyé/accepté).",
+    input_schema: {
+      type: "object",
+      properties: {
+        patient: { type: "string", description: "Nom et/ou prénom du patient concerné." },
+        pourcentage: { type: "number", enum: [10, 20, 30, 50, 100], description: "Le palier de remise à appliquer." },
+        produit: {
+          type: "string",
+          description: "Optionnel — nom du produit ciblé (monture, verre...) si la remise ne doit s'appliquer qu'à une ligne du devis, pas à tout le devis.",
+        },
+      },
+      required: ["patient", "pourcentage"],
+    },
+  },
 ];
 
 const PROMPT_SYSTEME = `Tu es l'assistant vocal du logiciel de gestion d'un magasin d'optique/audition (SAS Optique & Audition). On te donne le texte transcrit d'une phrase que l'utilisateur a dite au micro, en français — parfois imparfaitement reconnu.
@@ -170,7 +188,7 @@ export type ResultatAssistantVocal =
   | { type: "message"; texte: string };
 
 /** Les seules actions qui modifient des données — jamais exécutées directement par interpreterCommandeVocale, uniquement via executerActionConfirmee après un accord explicite de l'utilisateur. */
-const ACTIONS_CONFIRMABLES = ["repasser_en_attente", "modifier_dossier"] as const;
+const ACTIONS_CONFIRMABLES = ["repasser_en_attente", "modifier_dossier", "appliquer_remise_devis"] as const;
 type ActionConfirmable = (typeof ACTIONS_CONFIRMABLES)[number];
 
 /** Même liste que CHAMPS_MODIFIABLES dans /api/dossiers/[id]/route.ts, restreinte aux champs simples qu'il est raisonnable de dicter (pas civilité, NSS, préférences de contact...). */
@@ -506,6 +524,61 @@ async function demanderConfirmationModifierDossier(
   };
 }
 
+async function demanderConfirmationRemiseDevis(
+  patientBrut: string,
+  pourcentage: number,
+  produitBrut?: string,
+): Promise<ResultatAssistantVocal> {
+  if (!estRemiseAutorisee(pourcentage)) {
+    return { type: "message", texte: `La remise doit être l'un de ces paliers : ${REMISES_AUTORISEES.join(", ")} %.` };
+  }
+  const personnes = await rechercherPersonnes(patientBrut);
+  if (personnes.length === 0) {
+    return { type: "message", texte: `Aucun patient trouvé pour « ${patientBrut} ».` };
+  }
+  if (personnes.length > 1) {
+    return { type: "resultats_patients", personnes };
+  }
+  const personne = personnes[0];
+  const nomComplet = [personne.prenom, personne.nom].filter(Boolean).join(" ");
+
+  const proposition = await prisma.proposition.findFirst({
+    where: { personneId: personne.id, statut: "BROUILLON" },
+    orderBy: { creeA: "desc" },
+    include: { lignes: true },
+  });
+  if (!proposition) {
+    return { type: "message", texte: `${nomComplet} n'a aucun devis en brouillon — seul un devis pas encore envoyé peut recevoir une remise.` };
+  }
+  if (proposition.lignes.length === 0) {
+    return { type: "message", texte: `Le devis en brouillon de ${nomComplet} n'a aucune ligne.` };
+  }
+
+  let lignesCiblees = proposition.lignes;
+  const produit = produitBrut?.trim();
+  if (produit) {
+    const correspondantes = proposition.lignes.filter((l) => l.libelleProduit.toLowerCase().includes(produit.toLowerCase()));
+    if (correspondantes.length === 0) {
+      return { type: "message", texte: `Aucun produit correspondant à « ${produit} » dans le devis de ${nomComplet}.` };
+    }
+    if (correspondantes.length > 1) {
+      return {
+        type: "message",
+        texte: `Plusieurs produits du devis de ${nomComplet} correspondent à « ${produit} » — ouvrez son devis pour préciser lequel.`,
+      };
+    }
+    lignesCiblees = correspondantes;
+  }
+
+  const cible = produit ? `« ${lignesCiblees[0].libelleProduit} »` : "tout le devis";
+  return {
+    type: "confirmation",
+    description: `Appliquer ${pourcentage} % de remise sur ${cible} (${nomComplet}) ?`,
+    action: "appliquer_remise_devis",
+    parametres: { propositionId: proposition.id, ligneIds: lignesCiblees.map((l) => l.id), pourcentage },
+  };
+}
+
 /**
  * Reconnaît directement, sans passer par l'IA, le tournure la plus fréquente
  * ("ouvre le dossier de Malika Cazal") — constaté en production : avec de
@@ -637,6 +710,13 @@ export async function interpreterCommandeVocale(texteBrut: string): Promise<Resu
       const entree = blocOutil.input as { patient?: string; champ?: string; valeur?: string };
       return demanderConfirmationModifierDossier(entree.patient ?? "", entree.champ ?? "", entree.valeur ?? "");
     }
+    case "appliquer_remise_devis": {
+      const entree = blocOutil.input as { patient?: string; pourcentage?: number; produit?: string };
+      if (!entree.patient || typeof entree.pourcentage !== "number") {
+        return { type: "message", texte: "Je n'ai pas compris le patient ou le pourcentage de remise." };
+      }
+      return demanderConfirmationRemiseDevis(entree.patient, entree.pourcentage, entree.produit);
+    }
     default:
       return { type: "message", texte: "Commande non reconnue." };
   }
@@ -684,6 +764,42 @@ export async function executerActionConfirmee(action: string, parametres: unknow
     });
     const nomComplet = [personne.prenom, personne.nom].filter(Boolean).join(" ");
     return { type: "message", texte: `Contact mis à jour pour ${nomComplet}.` };
+  }
+  if (action === "appliquer_remise_devis") {
+    const params = parametres as { propositionId?: string; ligneIds?: string[]; pourcentage?: number } | null;
+    const propositionId = params?.propositionId;
+    const ligneIds = params?.ligneIds;
+    const pourcentage = params?.pourcentage;
+    if (
+      typeof propositionId !== "string" ||
+      !propositionId ||
+      !Array.isArray(ligneIds) ||
+      ligneIds.length === 0 ||
+      typeof pourcentage !== "number" ||
+      !estRemiseAutorisee(pourcentage)
+    ) {
+      return { type: "message", texte: "Paramètres invalides." };
+    }
+    const proposition = await prisma.proposition.findUnique({ where: { id: propositionId } });
+    if (!proposition) {
+      return { type: "message", texte: "Devis introuvable." };
+    }
+    if (proposition.statut !== "BROUILLON") {
+      return { type: "message", texte: "Ce devis n'est plus en brouillon — la remise ne peut plus être modifiée à la voix." };
+    }
+    await prisma.propositionLigne.updateMany({
+      where: { id: { in: ligneIds }, propositionId },
+      data: { remisePourcent: pourcentage },
+    });
+    await journaliser({
+      type: "proposition.ligne_correction_modifiee",
+      entite: "Proposition",
+      entiteId: propositionId,
+      personneId: proposition.personneId,
+      acteur,
+      donnees: { remisePourcent: pourcentage, ligneIds },
+    });
+    return { type: "message", texte: `Remise de ${pourcentage} % appliquée.` };
   }
   return { type: "message", texte: "Action non reconnue." };
 }
