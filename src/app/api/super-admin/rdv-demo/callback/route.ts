@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { lireSession } from "@/lib/auth";
-import { finaliserConnexionGoogle } from "@/lib/googleCalendarRdv";
+import { finaliserConnexionGoogle, redirectUriGoogleCalendar } from "@/lib/googleCalendarRdv";
 
 /**
  * GET /api/super-admin/rdv-demo/callback — retour de Google après consentement
@@ -24,8 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const redirectUri = new URL("/api/super-admin/rdv-demo/callback", request.nextUrl.origin).toString();
-    await finaliserConnexionGoogle(code, redirectUri, session?.email ?? "inconnu");
+    await finaliserConnexionGoogle(code, redirectUriGoogleCalendar(), session?.email ?? "inconnu");
     urlRetour.searchParams.set("connecte", "1");
   } catch (e) {
     urlRetour.searchParams.set("erreur", e instanceof Error ? e.message : "echec_inconnu");
