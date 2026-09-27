@@ -194,6 +194,23 @@ model Personne {
   syntheseBesoinValideeA   DateTime? // horodatage de la validation humaine — null tant que non validée
   syntheseBesoinValideePar String? // qui a validé
 
+  // Transcription brute de la conversation (dictée au micro, voir
+  // components/AssistantVocal.tsx pour le mécanisme de reconnaissance
+  // vocale réutilisé) — conservée pour pouvoir relancer l'extraction ou
+  // vérifier d'où vient la synthèse/les besoins ci-dessous. Même règle de
+  // validation que syntheseBesoin : toute modification invalide la
+  // validation précédente (voir lib/besoinsExprimes.ts).
+  transcriptionBesoin String?
+
+  // Besoins exprimés extraits par IA de la transcription — un taxonomie
+  // fermée (voir lib/besoinsExprimes.ts), pour pouvoir suggérer des
+  // produits du catalogue correspondants (verres, montures), pas juste du
+  // texte libre à relire. Éditables avant validation comme syntheseBesoin.
+  visionBesoin           String? // LOIN | PRES | PROGRESSIF
+  traitementsVerreBesoin String[] @default([]) // ANTIREFLET, ANTI_LUMIERE_BLEUE, PHOTOCHROMIQUE, DEGRADE, POLARISANT
+  matiereMontureBesoin   String? // METAL | PLASTIQUE | NYLOR | PERCEE
+  styleBesoin            String[] @default([]) // DE_MARQUE, SIMPLE, LEGERE, DISCRETE, EXTRAVAGANT, COLOREE, NOIRE, ECAILLE, AVEC_DU_PEPS, SOBRE
+
   documents          Document[]
   ordonnances        Ordonnance[]
   evenements         Evenement[]
