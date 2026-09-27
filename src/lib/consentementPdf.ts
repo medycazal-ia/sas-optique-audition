@@ -190,7 +190,11 @@ export async function genererConsentementRgpdSigne(params: {
       color: coche ? rgb(0.06, 0.4, 0.25) : undefined,
     });
     if (coche) {
-      page.drawText("✓", { x: marge + 1.5, y: y - 8.5, size: 10, font: policeGras, color: rgb(1, 1, 1) });
+      // "✓" n'est pas encodable par les polices standard (WinAnsi) de
+      // pdf-lib et fait planter la génération du PDF à l'exécution — un bug
+      // que ni tsc ni eslint ne peuvent détecter puisqu'il ne se manifeste
+      // qu'à l'appel réel de drawText. "X" reste un caractère ASCII sûr.
+      page.drawText("X", { x: marge + 2.5, y: y - 8.5, size: 9, font: policeGras, color: rgb(1, 1, 1) });
     }
     page.drawText(libelle, { x: marge + 20, y: y - 8, size: 10, font: police, color: rgb(0.1, 0.1, 0.1) });
     y -= 26;
