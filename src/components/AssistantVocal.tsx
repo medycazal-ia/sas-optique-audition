@@ -58,6 +58,7 @@ type EtatEcoute = "inactif" | "ecoute" | "traitement";
 
 type ReponseAssistantVocal =
   | { type: "navigation"; url: string; libelle: string }
+  | { type: "document_popup"; url: string; titre: string }
   | { type: "resultats_patients"; personnes: { id: string; nom: string; prenom: string | null }[] }
   | { type: "confirmation"; description: string; action: string; parametres: Record<string, unknown> }
   | { type: "message"; texte: string }
@@ -81,6 +82,7 @@ export default function AssistantVocal() {
   const [message, setMessage] = useState<string | null>(null);
   const [resultats, setResultats] = useState<{ id: string; nom: string; prenom: string | null }[] | null>(null);
   const [confirmation, setConfirmation] = useState<{ description: string; action: string; parametres: Record<string, unknown> } | null>(null);
+  const [documentPopup, setDocumentPopup] = useState<{ url: string; titre: string } | null>(null);
   const [supporte] = useState(() => Boolean(constructeurReconnaissanceVocale()));
   const reconnaissanceRef = useRef<ReconnaissanceVocale | null>(null);
   // Miroir de `confirmation`, lu depuis le callback onresult (défini une
@@ -96,6 +98,7 @@ export default function AssistantVocal() {
     setMessage(null);
     setResultats(null);
     setConfirmation(null);
+    setDocumentPopup(null);
     try {
       const reponse = await fetch("/api/assistant-vocal", {
         method: "POST",
@@ -112,6 +115,11 @@ export default function AssistantVocal() {
         setMessage(texte);
         parler(texte);
         router.push(data.url);
+      } else if (data.type === "document_popup") {
+        const texte = `${data.titre} ouvert.`;
+        setMessage(texte);
+        parler(texte);
+        setDocumentPopup({ url: data.url, titre: data.titre });
       } else if (data.type === "resultats_patients") {
         if (data.personnes.length === 0) {
           const texte = "Aucun patient trouvé.";
@@ -227,6 +235,7 @@ export default function AssistantVocal() {
     if (!reconnaissanceRef.current) return;
     setMessage(null);
     setResultats(null);
+    setDocumentPopup(null);
     // Ne réinitialise volontairement pas `confirmation` : cliquer le micro
     // pour dire "confirme" doit la laisser affichée le temps de traiter la
     // réponse (voir onresult, qui la lit via confirmationRef).
@@ -242,6 +251,7 @@ export default function AssistantVocal() {
   if (!supporte || PAGES_SANS_ASSISTANT.has(pathname)) return null;
 
   return (
+    <>
     <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-2">
       {(message || resultats || confirmation || (etat !== "inactif" && transcript)) && (
         <div className="max-w-xs rounded-xl border border-neutral-200 bg-white p-3 text-sm shadow-lg">
@@ -295,5 +305,29 @@ export default function AssistantVocal() {
         🎙️
       </button>
     </div>
+    {documentPopup && (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+        onClick={() => setDocumentPopup(null)}
+      >
+        <div
+          className="flex h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2">
+            <span className="text-sm font-semibold text-neutral-800">{documentPopup.titre}</span>
+            <button
+              onClick={() => setDocumentPopup(null)}
+              className="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100"
+              title="Fermer"
+            >
+              ✕
+            </button>
+          </div>
+          <iframe src={documentPopup.url} title={documentPopup.titre} className="flex-1 border-0" />
+        </div>
+      </div>
+    )}
+    </>
   );
 }
