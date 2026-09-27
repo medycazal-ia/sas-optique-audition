@@ -41,6 +41,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       correction: l,
       quantite: l.quantite,
       prixUnitaireTTC: l.prixUnitaireTTC,
+      remisePourcent: l.remisePourcent,
     })),
     modele,
   });

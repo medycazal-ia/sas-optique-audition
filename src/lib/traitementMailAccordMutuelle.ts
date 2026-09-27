@@ -3,6 +3,7 @@ import { journaliser } from "@/lib/evenements";
 import { enregistrerFichier } from "@/lib/stockageFichiers";
 import { assurerCodePaiement } from "@/lib/codePaiement";
 import { extraireAccordMutuelle, extraireAccordMutuelleDepuisTexte, type ResultatExtractionAccordMutuelle } from "@/lib/ocrAccordMutuelle";
+import { totalPropositionApresRemise } from "@/lib/remiseProposition";
 
 /**
  * Traitement d'un mail entrant potentiellement pertinent pour une demande de
@@ -334,7 +335,7 @@ export async function traiterMailAccordMutuelle(payload: PayloadMailEntrant): Pr
 
   if (extraction.statut === "ACCORD" && extraction.montantPriseEnChargeTTC !== null && extraction.numeroAccord) {
     const proposition = await prisma.proposition.findUnique({ where: { id: demande.propositionId }, include: { lignes: true } });
-    const totalProposition = proposition ? proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0) : 0;
+    const totalProposition = proposition ? totalPropositionApresRemise(proposition.lignes) : 0;
     const resteAChargeTTC = Math.max(0, totalProposition - extraction.montantPriseEnChargeTTC);
 
     await prisma.$transaction([

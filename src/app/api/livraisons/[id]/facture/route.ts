@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { journaliser } from "@/lib/evenements";
 import { lireSession } from "@/lib/auth";
+import { totalPropositionApresRemise } from "@/lib/remiseProposition";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -41,7 +42,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       { status: 409 },
     );
   }
-  const totalProposition = proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
+  const totalProposition = totalPropositionApresRemise(proposition.lignes);
   const montantTTC = proposition.resteAChargeTTC ?? totalProposition;
 
   const facture = await prisma.facture.create({

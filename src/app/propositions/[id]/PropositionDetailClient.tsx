@@ -7,6 +7,7 @@ import type { Produit, Proposition, PropositionLigne } from "@prisma/client";
 import { formaterPrix } from "@/lib/argent";
 import PadSignature from "@/components/PadSignature";
 import CorrectionVerreEditor from "@/components/CorrectionVerreEditor";
+import { REMISES_AUTORISEES, montantLigneApresRemise, totalPropositionApresRemise } from "@/lib/remiseProposition";
 
 type PropositionComplete = Proposition & {
   personne: { id: string; prenom: string; nom: string; telephone: string | null };
@@ -35,7 +36,7 @@ export default function PropositionDetailClient({ proposition }: { proposition: 
   const router = useRouter();
   const estBrouillon = proposition.statut === "BROUILLON";
   const estEnvoyee = proposition.statut === "ENVOYEE";
-  const total = proposition.lignes.reduce((s, l) => s + l.prixUnitaireTTC * l.quantite, 0);
+  const total = totalPropositionApresRemise(proposition.lignes);
 
   function actualiser() {
     router.refresh();
@@ -75,7 +76,10 @@ export default function PropositionDetailClient({ proposition }: { proposition: 
           <p className="mt-2 text-sm text-neutral-500">Aucun produit ajouté pour l&apos;instant.</p>
         ) : (
           <ul className="mt-3 divide-y divide-neutral-100">
-            {proposition.lignes.map((ligne) => (
+            {proposition.lignes.map((ligne) => {
+              const montantBrut = ligne.prixUnitaireTTC * ligne.quantite;
+              const montantApresRemise = montantLigneApresRemise(ligne);
+              return (
               <li key={ligne.id} className="py-2 text-sm">
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
@@ -86,10 +90,25 @@ export default function PropositionDetailClient({ proposition }: { proposition: 
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-semibold text-neutral-900">{formaterPrix(ligne.prixUnitaireTTC * ligne.quantite)}</span>
+                    {ligne.remisePourcent ? (
+                      <span className="text-right">
+                        <span className="block text-xs text-neutral-400 line-through">{formaterPrix(montantBrut)}</span>
+                        <span className="font-semibold text-emerald-700">{formaterPrix(montantApresRemise)}</span>
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-neutral-900">{formaterPrix(montantApresRemise)}</span>
+                    )}
                     {estBrouillon && <RetirerLigne propositionId={proposition.id} ligneId={ligne.id} onFait={actualiser} />}
                   </div>
                 </div>
+                {estBrouillon && (
+                  <RemiseLigne
+                    propositionId={proposition.id}
+                    ligneId={ligne.id}
+                    remiseActuelle={ligne.remisePourcent}
+                    onFait={actualiser}
+                  />
+                )}
                 {ligne.produit.type === "VERRE" && (
                   <CorrectionVerreEditor
                     valeurs={ligne}
@@ -105,7 +124,8 @@ export default function PropositionDetailClient({ proposition }: { proposition: 
                   />
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
         <div className="mt-3 flex items-center justify-between border-t border-neutral-200 pt-3">
@@ -126,6 +146,49 @@ export default function PropositionDetailClient({ proposition }: { proposition: 
 
       <Actions proposition={proposition} telephone={proposition.personne.telephone} onFait={actualiser} />
     </div>
+  );
+}
+
+function RemiseLigne({
+  propositionId,
+  ligneId,
+  remiseActuelle,
+  onFait,
+}: {
+  propositionId: string;
+  ligneId: string;
+  remiseActuelle: number | null;
+  onFait: () => void;
+}) {
+  const [envoi, setEnvoi] = useState(false);
+  async function changer(event: React.ChangeEvent<HTMLSelectElement>) {
+    const valeur = event.target.value;
+    setEnvoi(true);
+    await fetch(`/api/propositions/${propositionId}/lignes/${ligneId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ remisePourcent: valeur ? Number(valeur) : null }),
+    });
+    setEnvoi(false);
+    onFait();
+  }
+  return (
+    <label className="mt-1 flex items-center gap-2 text-xs text-neutral-500">
+      Remise
+      <select
+        value={remiseActuelle ?? ""}
+        onChange={changer}
+        disabled={envoi}
+        className="rounded-md border border-neutral-300 px-2 py-0.5 text-xs disabled:opacity-50"
+      >
+        <option value="">Aucune</option>
+        {REMISES_AUTORISEES.map((r) => (
+          <option key={r} value={r}>
+            {r} %
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

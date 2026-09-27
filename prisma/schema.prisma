@@ -722,6 +722,14 @@ model PropositionLigne {
   quantite        Int         @default(1)
   prixUnitaireTTC Int // instantané, en centimes
 
+  // Remise commerciale sur cette ligne — un des paliers autorisés (10, 20,
+  // 30, 50 ou 100 %, voir lib/remiseProposition.ts), null = aucune remise.
+  // Contrairement à prixUnitaireTTC (instantané figé), modifiable tant que
+  // la proposition est en brouillon (même règle que l'ajout/retrait de
+  // lignes) — passé ce stade, c'est un engagement commercial déjà transmis
+  // au client, qui ne se corrige plus en silence.
+  remisePourcent Int?
+
   // Instantanés supplémentaires pris au moment de l'ajout, comme
   // libelleProduit/prixUnitaireTTC ci-dessus — jamais recalculés après coup.
   // descriptionProduit et marqueProduit sont repris dans les devis/documents
@@ -894,6 +902,7 @@ model CommandeLigne {
   descriptionProduit String? // instantané de Produit.description — repris sur la facture (voir PropositionLigne)
   quantite           Int      @default(1)
   prixUnitaireTTC    Int? // instantané — renseigné pour une vente directe (pas de proposition dont dériver un prix)
+  remisePourcent     Int? // copié depuis PropositionLigne.remisePourcent au passage de commande — voir lib/remiseProposition.ts
   numeroSerie        String? // renseigné au contrôle — utile pour les appareils auditifs
 
   // Correction optique (catégorie VERRE) — copiée depuis la PropositionLigne
