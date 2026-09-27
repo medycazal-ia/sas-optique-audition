@@ -37,6 +37,7 @@ const CHAMPS_MODIFIABLES = [
   "telephone",
   "email",
   "adresse",
+  "adresseLigne2",
   "codePostal",
   "ville",
   "contactPrefereSms",

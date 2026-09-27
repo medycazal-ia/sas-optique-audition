@@ -325,6 +325,7 @@ function InformationsPersonnelles({ personne }: { personne: Personne & { documen
     telephone: personne.telephone ?? "",
     email: personne.email ?? "",
     adresse: personne.adresse ?? "",
+    adresseLigne2: personne.adresseLigne2 ?? "",
     codePostal: personne.codePostal ?? "",
     ville: personne.ville ?? "",
   });
@@ -396,6 +397,16 @@ function InformationsPersonnelles({ personne }: { personne: Personne & { documen
           <input
             value={champs.adresse}
             onChange={(e) => setChamps({ ...champs, adresse: e.target.value })}
+            placeholder="Numéro et voie"
+            className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+          />
+        </label>
+        <label className="text-sm sm:col-span-2">
+          Complément d&apos;adresse <span className="font-normal text-neutral-400">(optionnel)</span>
+          <input
+            value={champs.adresseLigne2}
+            onChange={(e) => setChamps({ ...champs, adresseLigne2: e.target.value })}
+            placeholder="Bâtiment, étage, appartement..."
             className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
           />
         </label>
