@@ -1,5 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { detecterTypeMime, TYPES_NON_SUPPORTES_VISION, nomFormatNonSupporte } from "@/lib/detectionMime";
+import { creerClientAnthropic } from "@/lib/anthropicClient";
 
 /**
  * Extraction des informations d'une carte de mutuelle/tiers payant
@@ -43,7 +43,7 @@ export async function extraireMutuelle(contenu: Buffer, nomFichier: string): Pro
     throw new Error("Extraction OCR indisponible : ANTHROPIC_API_KEY n'est pas configurée sur le serveur.");
   }
 
-  const client = new Anthropic({ apiKey: cleApi });
+  const client = creerClientAnthropic(cleApi);
   const mediaType = detecterTypeMime(contenu, nomFichier);
   if (TYPES_NON_SUPPORTES_VISION.has(mediaType)) {
     throw new Error(

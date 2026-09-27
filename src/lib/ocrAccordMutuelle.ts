@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { detecterTypeMime, TYPES_NON_SUPPORTES_VISION, nomFormatNonSupporte } from "@/lib/detectionMime";
+import { creerClientAnthropic } from "@/lib/anthropicClient";
 
 /**
  * Extraction des informations d'un courrier de réponse de mutuelle (accord
@@ -97,7 +98,7 @@ function clientAnthropic(): Anthropic {
   if (!cleApi) {
     throw new Error("Extraction OCR indisponible : ANTHROPIC_API_KEY n'est pas configurée sur le serveur.");
   }
-  return new Anthropic({ apiKey: cleApi });
+  return creerClientAnthropic(cleApi);
 }
 
 /** Extraction depuis un document (image ou PDF) — courrier scanné/photographié/téléversé, ou pièce jointe de mail. */
