@@ -4226,6 +4226,15 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
   const reconnaissanceRef = useRef<ReconnaissanceVocale | null>(null);
   const enregistrementActifRef = useRef(false);
 
+  // Ouvrir la popup lance directement la conversation guidée — pas besoin de
+  // cliquer sur un bouton en plus pour que l'assistant se mette à parler.
+  useEffect(() => {
+    if (modalOuverte) {
+      lancerQuestionnaire();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOuverte]);
+
   const modifieDepuisValidation =
     texte !== (personne.syntheseBesoin ?? "") ||
     vision !== ((personne.visionBesoin as VisionBesoin | null) ?? null) ||
@@ -4317,10 +4326,15 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
    * l'extraction sur l'ensemble question/réponse accumulé.
    */
   async function lancerQuestionnaire() {
+    if (questionnaireActif || enregistrement) return;
     setQuestionnaireActif(true);
     setMessage(null);
     let historique = "";
-    await parlerPromesse("Je vais vous poser quelques questions rapides pour bien cerner vos besoins.");
+    await parlerPromesse(
+      "Bonjour, je voudrais discuter avec vous de vos besoins en termes de lunettes et de vos attentes. " +
+        "Merci de répondre et de donner vos réponses et avis avec la plus grande sincérité, pour cerner au mieux vos besoins " +
+        "et ainsi trouver les meilleures solutions techniques, esthétiques et de confort pour votre vision future.",
+    );
     for (const question of QUESTIONS_AUDIT) {
       await parlerPromesse(question);
       const reponse = await ecouterUneReponse();
@@ -4465,7 +4479,7 @@ function SyntheseBesoin({ personne }: { personne: Personne }) {
                 disabled={enregistrement || questionnaireActif || envoi !== null}
                 className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
               >
-                {questionnaireActif ? "🗣️ Questionnaire en cours…" : "🗣️ Questionnaire guidé"}
+                {questionnaireActif ? "🗣️ Questionnaire en cours…" : "🗣️ Recommencer le questionnaire"}
               </button>
               <button
                 onClick={() => extraireBesoins()}
